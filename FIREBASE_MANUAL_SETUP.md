@@ -44,6 +44,25 @@ If you place the JSON at `./.secrets/service-account.json` (or
 `./.secrets/agenda-solar-989128d1b184.json`) you don't need to set
 `SERVICE_ACCOUNT_KEY_PATH`.
 
+## Local app config and keystore (recommended location)
+
+Place app runtime secrets and platform config in the local `.secrets/` folder so
+they are never committed. Examples:
+
+```bash
+# Android google-services config
+cp /path/to/google-services.json .secrets/google-services.json
+
+# Android upload keystore (keep this private)
+cp /path/to/upload-keystore.jks .secrets/upload-keystore.jks
+
+# iOS GoogleService-Info.plist (if you have one)
+cp /path/to/GoogleService-Info.plist .secrets/GoogleService-Info.plist
+```
+
+Scripts and helpers in this repository will prefer `./.secrets/` for these
+files. Keep `.secrets/` local and back it up securely outside the repo.
+
 - Opción B (ADC con gcloud): usa Application Default Credentials (recomendado si tienes `gcloud`):
 
 ```bash
@@ -186,8 +205,8 @@ Una vez que los planes estén en Firestore, necesitas:
 4. **Actualiza tu documento de usuario:**
    - Ve a `/users/TU_UID_AQUI`
    - Agrega o actualiza estos campos:
-   - 
-     ```
+
+     ```text
      - companyId: "FulltimeCuba25"
      - role: "OWNER"
      - updatedAt: [Timestamp] now
@@ -201,17 +220,19 @@ Una vez que los planes estén en Firestore, necesitas:
 
 Después de completar los pasos anteriores:
 
-### A. Verifica en Firestore:
-```
+### A. Verifica en Firestore
+
+```text
 https://console.firebase.google.com/project/agenda-solar/firestore/data
 ```
 
 Deberías ver:
+
 - ✓ Colección `/plans` con 4 documentos (free, pro, business, enterprise)
 - ✓ Colección `/companies` con tu empresa
 - ✓ Documento en `/users/TU_UID` con companyId y role
 
-### B. Verifica en la app:
+### B. Verifica en la app
 
 1. Cierra sesión y vuelve a entrar
 2. Deberías tener acceso a:
@@ -225,7 +246,8 @@ Deberías ver:
 
 ## 📊 ESTADO ACTUAL DEL DEPLOYMENT
 
-### ✅ COMPLETADO:
+### ✅ COMPLETADO
+
 - [x] Modelos Kotlin creados (Plan, Company, FeatureFlags, etc.)
 - [x] Código compila sin errores
 - [x] Firestore rules deployed
@@ -234,7 +256,8 @@ Deberías ver:
 - [x] .firebaserc corregido (resuelto problema de "kotlin")
 - [x] plans-data.json generado con datos completos
 
-### ⚠️ PENDIENTE MANUAL:
+### ⚠️ PENDIENTE MANUAL
+
 - [ ] Crear colección `/plans` en Firestore Console
 - [ ] Agregar 4 documentos de planes manualmente
 - [ ] Registrarte en la app
@@ -242,7 +265,8 @@ Deberías ver:
 - [ ] Crear tu empresa Enterprise en Firestore Console
 - [ ] Actualizar tu documento de usuario
 
-### ❌ BLOQUEADO (No crítico):
+### ❌ BLOQUEADO (No crítico)
+
 - Scripts Node.js requieren service account credentials
 - Alternativa manual funciona perfectamente
 
@@ -250,11 +274,11 @@ Deberías ver:
 
 ## 🔗 LINKS RÁPIDOS
 
-- **Firebase Console:** https://console.firebase.google.com/project/agenda-solar
-- **Firestore Data:** https://console.firebase.google.com/project/agenda-solar/firestore/data
-- **Authentication:** https://console.firebase.google.com/project/agenda-solar/authentication/users
-- **Rules:** https://console.firebase.google.com/project/agenda-solar/firestore/rules
-- **Indexes:** https://console.firebase.google.com/project/agenda-solar/firestore/indexes
+- **Firebase Console:** <https://console.firebase.google.com/project/agenda-solar>
+- **Firestore Data:** <https://console.firebase.google.com/project/agenda-solar/firestore/data>
+- **Authentication:** <https://console.firebase.google.com/project/agenda-solar/authentication/users>
+- **Rules:** <https://console.firebase.google.com/project/agenda-solar/firestore/rules>
+- **Indexes:** <https://console.firebase.google.com/project/agenda-solar/firestore/indexes>
 
 ---
 
@@ -275,18 +299,21 @@ Deberías ver:
 
 ## 🆘 TROUBLESHOOTING
 
-### Si la app no reconoce tu empresa:
+### Si la app no reconoce tu empresa
+
 1. Verifica que `companyId` en `/users/TU_UID` sea correcto
 2. Verifica que exista `/companies/company_TU_UID`
 3. Cierra sesión y vuelve a entrar
 4. Revisa los logs de la app en Logcat
 
-### Si dice que no tienes permisos:
+### Si dice que no tienes permisos
+
 1. Verifica que `role` en `/users/TU_UID` sea "OWNER"
 2. Verifica que tu UID esté en `ownerId` y `memberIds` de la empresa
 3. Verifica que las Firestore rules estén deployed correctamente
 
-### Si los features no funcionan:
+### Si los features no funcionan
+
 1. Verifica que `planTier` en la empresa sea "enterprise"
 2. Verifica que exista el documento `/plans/enterprise`
 3. Verifica que `subscriptionStatus` sea "ACTIVE"

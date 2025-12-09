@@ -25,3 +25,5 @@ bower_components/
 *.swp
 *~
 app/agenda-solar-989128d1b184.json
+/.secrets/
+/.secrets/*.json
