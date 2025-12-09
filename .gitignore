@@ -45,6 +45,11 @@ GeneratedPluginRegistrant.java
 /app/src/profile/GoogleService-Info.plist
 /app/src/release/google-services.json
 /app/src/release/GoogleService-Info.plist
+
+# Local Firebase config files - DO NOT COMMIT.
+# Keep your `google-services.json` in `.secrets/` for local development
+# or load it from Secret Manager in CI. The file below is ignored
+# to prevent accidental commits of project credentials.
 /app/google-services.json
 /app/GoogleService-Info.plist
 /app/upload-keystore.jks
