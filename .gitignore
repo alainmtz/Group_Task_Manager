@@ -45,6 +45,9 @@ GeneratedPluginRegistrant.java
 /app/GoogleService-Info.plist
 /app/upload-keystore.jks
 
+# Service account key (do NOT commit)
+/app/agenda-solar-989128d1b184.json
+
 
 # Keystore files (security)
 **/*.keystore

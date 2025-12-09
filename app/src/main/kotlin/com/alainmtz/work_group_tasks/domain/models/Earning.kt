@@ -12,7 +12,8 @@ data class Earning(
     val amount: Double = 0.0,
     val timestamp: Timestamp = Timestamp.now(),
     val status: String = "pending", // "pending" or "confirmed"
-    val creatorId: String = ""
+    val creatorId: String = "",
+    val companyId: String? = null
 ) {
     companion object {
         fun fromFirestore(doc: DocumentSnapshot): Earning {
@@ -25,7 +26,8 @@ data class Earning(
                 amount = doc.getDouble("amount") ?: 0.0,
                 timestamp = doc.getTimestamp("timestamp") ?: Timestamp.now(),
                 status = doc.getString("status") ?: "pending",
-                creatorId = doc.getString("creatorId") ?: ""
+                creatorId = doc.getString("creatorId") ?: "",
+                companyId = doc.getString("companyId")
             )
         }
     }

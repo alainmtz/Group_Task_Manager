@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "agenda-solar"
+    "default": "agenda-solar",
+    "prod": "agenda-solar"
   }
 }

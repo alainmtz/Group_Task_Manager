@@ -30,7 +30,11 @@ data class Task(
     val assignedUserIds: List<String> = emptyList(),
     val groupId: String? = null,
     val totalBudget: Double? = null,
-    val postponementRequests: List<PostponementRequest> = emptyList()
+    val postponementRequests: List<PostponementRequest> = emptyList(),
+    val companyId: String? = null,
+    val requiresApproval: Boolean = false,
+    val approvalHierarchy: List<String> = emptyList(),
+    val approvalStatus: String = "none"
 ) : Parcelable {
     companion object {
         private inline fun <reified T : Enum<T>> safeEnumValueOf(value: String?, default: T): T {
@@ -61,7 +65,11 @@ data class Task(
                 assignedUserIds = data["assignedUserIds"] as? List<String> ?: emptyList(),
                 groupId = data["groupId"] as? String,
                 totalBudget = (data["totalBudget"] as? Number)?.toDouble(),
-                postponementRequests = (data["postponementRequests"] as? List<Map<String, Any>>)?.map { PostponementRequest.fromMap(it) } ?: emptyList()
+                postponementRequests = (data["postponementRequests"] as? List<Map<String, Any>>)?.map { PostponementRequest.fromMap(it) } ?: emptyList(),
+                companyId = data["companyId"] as? String,
+                requiresApproval = data["requiresApproval"] as? Boolean ?: false,
+                approvalHierarchy = data["approvalHierarchy"] as? List<String> ?: emptyList(),
+                approvalStatus = data["approvalStatus"] as? String ?: "none"
             )
         }
     }
@@ -77,7 +85,11 @@ data class Task(
             "assignedUserIds" to assignedUserIds,
             "groupId" to groupId,
             "totalBudget" to totalBudget,
-            "postponementRequests" to postponementRequests.map { it.toMap() }
+            "postponementRequests" to postponementRequests.map { it.toMap() },
+            "companyId" to companyId,
+            "requiresApproval" to requiresApproval,
+            "approvalHierarchy" to approvalHierarchy,
+            "approvalStatus" to approvalStatus
         )
     }
 }

@@ -10,7 +10,8 @@ data class Group(
     val name: String,
     val creatorId: String,
     val memberIds: List<String>,
-    val code: String = ""
+    val code: String = "",
+    val companyId: String? = null
 ) : Parcelable {
     companion object {
         fun fromFirestore(doc: DocumentSnapshot): Group {
@@ -20,7 +21,8 @@ data class Group(
                 name = data["name"] as? String ?: "",
                 creatorId = data["creatorId"] as? String ?: "",
                 memberIds = data["memberIds"] as? List<String> ?: emptyList(),
-                code = data["code"] as? String ?: ""
+                code = data["code"] as? String ?: "",
+                companyId = data["companyId"] as? String
             )
         }
     }
@@ -30,7 +32,8 @@ data class Group(
             "name" to name,
             "creatorId" to creatorId,
             "memberIds" to memberIds,
-            "code" to code
+            "code" to code,
+            "companyId" to companyId
         )
     }
 }
