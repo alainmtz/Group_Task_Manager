@@ -1,15 +1,21 @@
 # ============================================
-# CHECKLIST DE CONFIGURACIÓN DE FIREBASE
-# ============================================
-# Fecha: 9 de diciembre de 2025
-# Proyecto: agenda-solar
-# ============================================
+
+## CHECKLIST DE CONFIGURACIÓN DE FIREBASE
+
+## ============================================**
+
+## Fecha: 9 de diciembre de 2025
+
+## Proyecto: agenda-solar
+
+## **============================================
 
 ## ✅ PASO 1: Resolver Error de Firebase CLI
 
 **Problema resuelto:** El error "Invalid project id: Kotlin" se debía a que Firebase CLI interpretaba "kotlin" del path como un project ID.
 
 **Solución aplicada:**
+
 ```bash
 firebase use default --project agenda-solar
 ```
@@ -33,6 +39,11 @@ export SERVICE_ACCOUNT_KEY_PATH="$HOME/.config/gcloud/agenda-solar-sa.json"
 node functions/init-plans.js
 ```
 
+Note: The repository scripts now also look for a local `.secrets` folder by default.
+If you place the JSON at `./.secrets/service-account.json` (or
+`./.secrets/agenda-solar-989128d1b184.json`) you don't need to set
+`SERVICE_ACCOUNT_KEY_PATH`.
+
 - Opción B (ADC con gcloud): usa Application Default Credentials (recomendado si tienes `gcloud`):
 
 ```bash
@@ -49,7 +60,7 @@ node functions/init-plans.js
 
 **Crear service account (pasos resumidos):**
 
-1. Abre: https://console.cloud.google.com/iam-admin/serviceaccounts?project=agenda-solar
+1. Abre: <https://console.cloud.google.com/iam-admin/serviceaccounts?project=agenda-solar>
 2. Click `CREATE SERVICE ACCOUNT` → Nombre: `agenda-deployer` → ID: `agenda-deployer`
 3. Asigna rol: `Firestore Owner` o `Project Editor` (mínimo `Cloud Datastore Owner` / `Firestore Admin` para escribir datos)
 4. En la sección `Keys` añade una nueva llave JSON y descárgala
@@ -61,10 +72,11 @@ node functions/init-plans.js
 
 No podemos usar scripts Node.js directamente sin credenciales, pero podemos usar la Firebase Console.
 
-#### Pasos manuales (5 minutos):
+#### Pasos manuales (5 minutos)
 
 1. **Abre Firebase Console:**
-   ```
+
+   ```text
    https://console.firebase.google.com/project/agenda-solar/firestore/data
    ```
 
@@ -76,9 +88,9 @@ No podemos usar scripts Node.js directamente sin credenciales, pero podemos usar
 3. **Agrega los 4 documentos:**
 
    **Documento 1: `free`**
-   ```
+
+   ``` text
    Document ID: free
-   
    Copiar y pegar todo el contenido del objeto "free" desde plans-data.json:
    - id: "free"
    - name: "Free Plan"
@@ -89,19 +101,22 @@ No podemos usar scripts Node.js directamente sin credenciales, pero podemos usar
    ```
 
    **Documento 2: `pro`**
-   ```
+
+   ```text
    Document ID: pro
    (Copiar contenido del objeto "pro" desde plans-data.json)
    ```
 
    **Documento 3: `business`**
-   ```
+
+   ```text
    Document ID: business
    (Copiar contenido del objeto "business" desde plans-data.json)
    ```
 
    **Documento 4: `enterprise`**
-   ```
+
+   ```text
    Document ID: enterprise
    (Copiar contenido del objeto "enterprise" desde plans-data.json)
    ```
@@ -119,6 +134,7 @@ Una vez que los planes estén en Firestore, necesitas:
 ### A. Registrarte en la app
 
 1. Instala la app en tu dispositivo:
+
    ```bash
    ./gradlew installDebug
    ```
@@ -126,23 +142,25 @@ Una vez que los planes estén en Firestore, necesitas:
 2. Abre la app y regístrate con tu email
 
 3. Obtén tu Firebase Auth UID:
-   - Ve a: https://console.firebase.google.com/project/agenda-solar/authentication/users
+   - Ve a: <https://console.firebase.google.com/project/agenda-solar/authentication/users>
    - Busca tu email
    - Copia el UID (algo como: `abc123xyz789...`)
 
 ### B. Crear tu empresa Enterprise manualmente
 
 1. **Abre Firebase Console:**
-   ```
-   https://console.firebase.google.com/project/agenda-solar/firestore/data
+
+   ```text
+   <https://console.firebase.google.com/project/agenda-solar/firestore/data>
    ```
 
 2. **Crea la colección `/companies`** (si no existe)
 
 3. **Agrega tu documento de empresa:**
-   ```
+
+   ``` text
    Document ID: FulltimeCuba25
-   
+
    Campos:
    - id: "FulltimeCuba25"
    - name: "Fulltime Cuba"
@@ -168,6 +186,7 @@ Una vez que los planes estén en Firestore, necesitas:
 4. **Actualiza tu documento de usuario:**
    - Ve a `/users/TU_UID_AQUI`
    - Agrega o actualiza estos campos:
+   - 
      ```
      - companyId: "FulltimeCuba25"
      - role: "OWNER"
