@@ -135,6 +135,50 @@ object FeatureFlags {
         
         return Pair(plan.features.canExportData, message)
     }
+
+    /**
+     * Check if SSO is available
+     */
+    fun canUseSSO(plan: Plan): Pair<Boolean, String?> {
+        val message = if (!plan.features.canUseSSO) {
+            "SSO requires ENTERPRISE plan."
+        } else null
+
+        return Pair(plan.features.canUseSSO, message)
+    }
+
+    /**
+     * Check if API access is available
+     */
+    fun canUseAPI(plan: Plan): Pair<Boolean, String?> {
+        val message = if (!plan.features.canUseAPI) {
+            "API access requires ENTERPRISE plan."
+        } else null
+
+        return Pair(plan.features.canUseAPI, message)
+    }
+
+    /**
+     * Check if white-label customization is available
+     */
+    fun canWhiteLabel(plan: Plan): Pair<Boolean, String?> {
+        val message = if (!plan.features.canWhiteLabel) {
+            "White-labeling requires ENTERPRISE plan."
+        } else null
+
+        return Pair(plan.features.canWhiteLabel, message)
+    }
+
+    /**
+     * Check if audit logs are available
+     */
+    fun canUseAuditLogs(plan: Plan): Pair<Boolean, String?> {
+        val message = if (!plan.features.canUseAuditLogs) {
+            "Audit logs require BUSINESS plan or higher (recommended ENTERPRISE)."
+        } else null
+
+        return Pair(plan.features.canUseAuditLogs, message)
+    }
     
     /**
      * Get suggested upgrade tier
@@ -155,6 +199,13 @@ object FeatureFlags {
         val limit = plan.features.getStorageLimitBytes()
         if (limit == 0L) return 0
         return ((company.storageUsedBytes.toDouble() / limit) * 100).toInt().coerceIn(0, 100)
+    }
+
+    /**
+     * Get support level label for the plan
+     */
+    fun getSupportLevel(plan: Plan): String {
+        return plan.features.supportLevel
     }
     
     /**
