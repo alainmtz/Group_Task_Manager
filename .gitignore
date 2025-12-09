@@ -13,6 +13,10 @@ key.properties
 
 # IDE files
 .idea/
+
+# Node modules (don't commit)
+node_modules/
+functions/node_modules/
 *.iml
 .cxx/
 *.swp
