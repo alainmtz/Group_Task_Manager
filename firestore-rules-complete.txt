@@ -1,0 +1,194 @@
+================================================================================
+FIRESTORE RULES - TESTING (Current)
+Valid until: December 11, 2025
+Use this for development
+Copy and paste everything below into Firebase Console > Firestore > Rules
+================================================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // TESTING: Allow all authenticated users full access
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+
+# ============================================================================
+
+================================================================================
+FIRESTORE RULES - PRODUCTION
+Secure rules for live deployment
+Copy and paste everything below into Firebase Console > Firestore > Rules
+================================================================================
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwnUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isMemberOfGroup(groupId) {
+      return isAuthenticated() && 
+             request.auth.uid in get(/databases/$(database)/documents/groups/$(groupId)).data.members;
+    }
+    
+    function isGroupOwner(groupId) {
+      return isAuthenticated() && 
+             request.auth.uid == get(/databases/$(database)/documents/groups/$(groupId)).data.ownerId;
+    }
+    
+    function isMemberOfTask(taskId) {
+      let taskDoc = get(/databases/$(database)/documents/tasks/$(taskId));
+      return isAuthenticated() && 
+             request.auth.uid in taskDoc.data.assignedUsers;
+    }
+    
+    // USER COLLECTION
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwnUser(userId);
+      allow create: if isOwnUser(userId);
+    }
+    
+    // GROUPS COLLECTION
+    match /groups/{groupId} {
+      allow read: if isMemberOfGroup(groupId) || isGroupOwner(groupId);
+      
+      allow create: if isAuthenticated() &&
+                       request.resource.data.ownerId == request.auth.uid &&
+                       request.resource.data.members is list &&
+                       request.auth.uid in request.resource.data.members;
+      
+      allow update: if isGroupOwner(groupId) || isMemberOfGroup(groupId);
+      allow delete: if isGroupOwner(groupId);
+      
+      // Subcollection: Group Members
+      match /members/{memberId} {
+        allow read: if isMemberOfGroup(groupId);
+        allow write: if isGroupOwner(groupId);
+      }
+    }
+    
+    // TASKS COLLECTION
+    match /tasks/{taskId} {
+      allow read: if isAuthenticated() && 
+                     (request.auth.uid in resource.data.assignedUsers ||
+                      request.auth.uid == resource.data.createdBy);
+      
+      allow create: if isAuthenticated() &&
+                       request.resource.data.createdBy == request.auth.uid;
+      
+      allow update: if isAuthenticated() &&
+                       (request.auth.uid in resource.data.assignedUsers ||
+                        request.auth.uid == resource.data.createdBy);
+      
+      allow delete: if isAuthenticated() &&
+                       request.auth.uid == resource.data.createdBy;
+      
+      // Subcollection: Task Comments
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() &&
+                         request.resource.data.authorId == request.auth.uid;
+        allow update, delete: if isAuthenticated() &&
+                                 request.auth.uid == resource.data.authorId;
+      }
+    }
+    
+    // CHAT THREADS COLLECTION
+    match /chatThreads/{threadId} {
+      allow read: if isAuthenticated() &&
+                     request.auth.uid in resource.data.participants;
+      
+      allow create: if isAuthenticated() &&
+                       request.auth.uid in request.resource.data.participants;
+      
+      allow update: if isAuthenticated() &&
+                       request.auth.uid in resource.data.participants;
+      
+      // Subcollection: Messages
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() &&
+                       request.auth.uid in get(/databases/$(database)/documents/chatThreads/$(threadId)).data.participants;
+        
+        allow create: if isAuthenticated() &&
+                         request.resource.data.senderId == request.auth.uid;
+        
+        allow update, delete: if isAuthenticated() &&
+                                 request.auth.uid == resource.data.senderId;
+      }
+    }
+  }
+}
+================================================================================
+STORAGE RULES - TESTING
+Allow all authenticated users to upload images
+Copy and paste everything below into Firebase Console > Storage > Rules
+================================================================================
+
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /avatars/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    match /chat-images/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    match /task-evidence/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}
+
+
+================================================================================
+STORAGE RULES - PRODUCTION
+Secure file uploads
+Copy and paste everything below into Firebase Console > Storage > Rules
+================================================================================
+
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // User Avatars: Users can upload their own avatar
+    match /avatars/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Chat Images: Only authenticated participants can upload
+    match /chat-images/{threadId}/{imageId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+    
+    // Task Evidence: Only assigned users can upload evidence
+    match /task-evidence/{taskId}/{evidenceId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+    
+    // Deny everything else
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

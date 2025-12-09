@@ -1,0 +1,362 @@
+const {onCall} = require('firebase-functions/v2/https');
+const {onDocumentCreated, onDocumentUpdated} = require('firebase-functions/v2/firestore');
+const {onSchedule} = require('firebase-functions/v2/scheduler');
+const {setGlobalOptions} = require('firebase-functions/v2');
+const admin = require('firebase-admin');
+
+admin.initializeApp();
+
+// Configuración global para todas las funciones
+setGlobalOptions({
+  region: 'us-central1',
+  maxInstances: 10
+});
+
+/**
+ * Cloud Function para enviar eventos de actualización vía FCM
+ * 
+ * Esta función envía mensajes FCM silenciosos (data-only) a múltiples usuarios
+ * para notificarles sobre cambios en tareas, subtareas, presupuestos, etc.
+ * 
+ * Los mensajes son procesados por MyFirebaseMessagingService en el cliente
+ * que los emite al UpdateEventBus para disparar actualizaciones reactivas en la UI.
+ */
+exports.sendUpdateEvent = onCall(async (request) => {
+  // Verificar autenticación
+  if (!request.auth) {
+    throw new Error('Must be authenticated to send events');
+  }
+
+  const { userIds, eventType, data: eventData } = request.data;
+
+  // Validar parámetros
+  if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+    throw new Error('userIds must be a non-empty array');
+  }
+
+  if (!eventType || typeof eventType !== 'string') {
+    throw new Error('eventType is required and must be a string');
+  }
+
+  try {
+    // Obtener tokens FCM de todos los usuarios
+    const tokensPromises = userIds.map(async (userId) => {
+      try {
+        const userDoc = await admin.firestore()
+          .collection('users')
+          .doc(userId)
+          .get();
+        
+        if (!userDoc.exists) {
+          console.warn(`User ${userId} does not exist`);
+          return null;
+        }
+        
+        return userDoc.data()?.fcmToken || null;
+      } catch (error) {
+        console.error(`Error fetching token for user ${userId}:`, error);
+        return null;
+      }
+    });
+
+    const tokens = (await Promise.all(tokensPromises))
+      .filter(token => token != null && token !== '' && typeof token === 'string' && token.length > 0);
+
+    if (tokens.length === 0) {
+      console.log('No FCM tokens found for users:', userIds);
+      return { 
+        success: true, 
+        sent: 0, 
+        failed: 0,
+        message: 'No tokens available' 
+      };
+    }
+
+    console.log(`Sending event ${eventType} to ${tokens.length} tokens`);
+
+    // Preparar mensaje FCM con payload de data (notificación silenciosa)
+    // Solo data payload = no muestra notificación, app procesa en background
+    const messageData = {
+      eventType: eventType,
+    };
+
+    // Convertir todos los valores a strings (requerido por FCM data messages)
+    if (eventData) {
+      Object.keys(eventData).forEach(key => {
+        const value = eventData[key];
+        if (value != null) {
+          messageData[key] = String(value);
+        }
+      });
+    }
+
+    // Enviar mensaje multicast con configuración específica para Android
+    const message = {
+      data: messageData,
+      tokens: tokens,
+      android: {
+        priority: 'high'
+      }
+    };
+
+    const response = await admin.messaging().sendEachForMulticast(message);
+
+    // Log de resultados
+    console.log(`Event: ${eventType} | Sent: ${response.successCount}/${tokens.length}`);
+    
+    if (response.failureCount > 0) {
+      console.log(`Failed to send ${response.failureCount} messages`);
+      response.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          const errorCode = resp.error?.code || 'unknown';
+          const errorMsg = resp.error?.message || 'Unknown error';
+          console.error(`Token ${idx} failed: ${errorCode} - ${errorMsg}`);
+          
+          // Si el token es inválido, limpiarlo de Firestore
+          if (errorCode === 'messaging/invalid-registration-token' ||
+              errorCode === 'messaging/registration-token-not-registered' ||
+              errorCode === 'messaging/invalid-argument') {
+            const invalidToken = tokens[idx];
+            console.log(`Cleaning invalid token: ${invalidToken.substring(0, 20)}...`);
+            
+            // Buscar y limpiar el token inválido (async sin await)
+            admin.firestore()
+              .collection('users')
+              .where('fcmToken', '==', invalidToken)
+              .get()
+              .then(snapshot => {
+                snapshot.forEach(doc => {
+                  console.log(`Removing token from user: ${doc.id}`);
+                  doc.ref.update({ fcmToken: admin.firestore.FieldValue.delete() });
+                });
+              })
+              .catch(err => console.error('Error cleaning invalid token:', err));
+          }
+        }
+      });
+    }
+
+    return {
+      success: true,
+      sent: response.successCount,
+      failed: response.failureCount,
+      eventType: eventType
+    };
+  } catch (error) {
+    console.error('Error sending update event:', error);
+    throw new functions.https.HttpsError(
+      'internal', 
+      `Failed to send event: ${error.message}`
+    );
+  }
+});
+
+/**
+ * Trigger de Firestore: Cuando se crea un nuevo mensaje de chat
+ * Envía notificación a todos los miembros del chat excepto al remitente
+ */
+exports.onChatMessageCreated = onDocumentCreated(
+  'tasks/{taskId}/messages/{messageId}',
+  async (event) => {
+    const message = event.data.data();
+    const { taskId } = event.params;
+    const senderId = message.senderId;
+    const senderName = message.senderName || 'Someone';
+    const messageText = message.text || 'Sent a message';
+
+    try {
+      // Obtener información de la tarea
+      const taskDoc = await admin.firestore()
+        .collection('tasks')
+        .doc(taskId)
+        .get();
+
+      if (!taskDoc.exists) {
+        console.log('Task not found:', taskId);
+        return null;
+      }
+
+      const task = taskDoc.data();
+      const taskTitle = task.title || 'Task';
+      
+      // Obtener todos los miembros (creador + asignados)
+      const memberIds = [
+        task.creatorId,
+        ...(task.assignedUserIds || []),
+        ...(task.memberIds || [])
+      ];
+      const uniqueMemberIds = [...new Set(memberIds)]
+        .filter(id => id && id !== senderId);
+
+      if (uniqueMemberIds.length === 0) {
+        console.log('No members to notify');
+        return null;
+      }
+
+      // Obtener tokens FCM
+      const tokensSnapshot = await admin.firestore()
+        .collection('users')
+        .where(admin.firestore.FieldPath.documentId(), 'in', uniqueMemberIds.slice(0, 10))
+        .get();
+
+      const tokens = tokensSnapshot.docs
+        .map(doc => doc.data().fcmToken)
+        .filter(token => token);
+
+      if (tokens.length === 0) {
+        console.log('No FCM tokens found');
+        return null;
+      }
+
+      // Enviar notificación con sonido (notification + data)
+      await admin.messaging().sendEachForMulticast({
+        notification: {
+          title: `${senderName} in ${taskTitle}`,
+          body: messageText.substring(0, 100)
+        },
+        data: {
+          eventType: 'MESSAGE_RECEIVED',
+          taskId: taskId,
+          messageId: event.data.id
+        },
+        tokens: tokens,
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'chat_messages',
+            priority: 'high',
+            sound: 'default'
+          }
+        }
+      });
+
+      console.log(`Chat notification sent to ${tokens.length} users`);
+      return null;
+    } catch (error) {
+      console.error('Error sending chat notification:', error);
+      return null;
+    }
+  });
+
+/**
+ * Trigger de Firestore: Cuando un usuario actualiza su perfil
+ * Envía evento de actualización a todos sus contactos/grupos
+ */
+exports.onUserProfileUpdated = onDocumentUpdated(
+  'users/{userId}',
+  async (event) => {
+    const before = event.data.before.data();
+    const after = event.data.after.data();
+    const { userId } = event.params;
+
+    // Solo procesar si cambió el nombre o la foto de perfil
+    if (before.name === after.name && 
+        before.profilePictureUrl === after.profilePictureUrl) {
+      return null;
+    }
+
+    try {
+      // Encontrar todas las tareas donde el usuario es miembro
+      const tasksSnapshot = await admin.firestore()
+        .collection('tasks')
+        .where('memberIds', 'array-contains', userId)
+        .get();
+
+      if (tasksSnapshot.empty) {
+        console.log('User not in any tasks');
+        return null;
+      }
+
+      // Recolectar IDs únicos de todos los miembros de esas tareas
+      const allMemberIds = new Set();
+      tasksSnapshot.docs.forEach(doc => {
+        const task = doc.data();
+        [task.creatorId, ...(task.assignedUserIds || []), ...(task.memberIds || [])]
+          .forEach(id => {
+            if (id && id !== userId) allMemberIds.add(id);
+          });
+      });
+
+      if (allMemberIds.size === 0) {
+        return null;
+      }
+
+      // Obtener tokens en batches (Firestore limit: 10 items en 'in' query)
+      const memberIdArray = Array.from(allMemberIds);
+      const batchSize = 10;
+      const tokens = [];
+
+      for (let i = 0; i < memberIdArray.length; i += batchSize) {
+        const batch = memberIdArray.slice(i, i + batchSize);
+        const snapshot = await admin.firestore()
+          .collection('users')
+          .where(admin.firestore.FieldPath.documentId(), 'in', batch)
+          .get();
+        
+        snapshot.docs.forEach(doc => {
+          const token = doc.data().fcmToken;
+          if (token) tokens.push(token);
+        });
+      }
+
+      if (tokens.length === 0) {
+        return null;
+      }
+
+      // Enviar evento silencioso de actualización
+      await admin.messaging().sendEachForMulticast({
+        data: {
+          eventType: 'USER_PROFILE_UPDATED',
+          userId: userId
+        },
+        tokens: tokens
+      });
+
+      console.log(`Profile update event sent to ${tokens.length} users`);
+      return null;
+    } catch (error) {
+      console.error('Error sending profile update event:', error);
+      return null;
+    }
+  });
+
+/**
+ * Función programada: Limpiar tokens FCM inválidos semanalmente
+ * Elimina tokens de usuarios que no han estado activos en 90 días
+ */
+exports.cleanupInactiveTokens = onSchedule(
+  {
+    schedule: 'every sunday 03:00',
+    timeZone: 'America/Mexico_City'
+  },
+  async (event) => {
+    const ninetyDaysAgo = Date.now() - (90 * 24 * 60 * 60 * 1000);
+    
+    try {
+      const snapshot = await admin.firestore()
+        .collection('users')
+        .where('lastActive', '<', new Date(ninetyDaysAgo))
+        .where('fcmToken', '!=', null)
+        .get();
+
+      const batch = admin.firestore().batch();
+      let count = 0;
+
+      snapshot.docs.forEach(doc => {
+        batch.update(doc.ref, {
+          fcmToken: admin.firestore.FieldValue.delete()
+        });
+        count++;
+      });
+
+      if (count > 0) {
+        await batch.commit();
+        console.log(`Cleaned ${count} inactive FCM tokens`);
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error cleaning tokens:', error);
+      return null;
+    }
+  });

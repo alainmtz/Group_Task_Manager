@@ -1,0 +1,72 @@
+# Gradle files
+.gradle/
+gradle-wrapper.jar
+/gradlew
+/gradlew.bat
+build/
+*/build/
+**/.gradle/
+
+# Local configuration
+local.properties
+key.properties
+
+# IDE files
+.idea/
+*.iml
+.cxx/
+*.swp
+*.swo
+*~
+.kotlin/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Captures & logs
+/captures/
+*.log
+
+# Generated files
+GeneratedPluginRegistrant.java
+/app/google-services.json.backup
+/app/GoogleService-Info.plist.backup
+/app/src/main/res/google-services.json
+/app/src/main/res/GoogleService-Info.plist
+/app/src/debug/google-services.json
+/app/src/debug/GoogleService-Info.plist
+/app/src/profile/google-services.json
+/app/src/profile/GoogleService-Info.plist
+/app/src/release/google-services.json
+/app/src/release/GoogleService-Info.plist
+/app/google-services.json
+/app/GoogleService-Info.plist
+/app/upload-keystore.jks
+
+
+# Keystore files (security)
+**/*.keystore
+**/*.jks
+
+# Firebase & deployment
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# APK/Bundle files
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Native
+*.so
+*.o
+
+# Temporary files
+*.tmp
+*.bak
+.cache/
