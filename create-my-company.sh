@@ -27,10 +27,15 @@ fi
 OWNER_EMAIL=$1
 OWNER_UID=${2:-""}
 
-# Prefer a local service account JSON in `app/` if present. This file must NOT be committed.
-if [ -z "$SERVICE_ACCOUNT_KEY_PATH" ] && [ -f "./app/agenda-solar-989128d1b184.json" ]; then
-  export SERVICE_ACCOUNT_KEY_PATH="$(pwd)/app/agenda-solar-989128d1b184.json"
-  echo "Using local service account at $SERVICE_ACCOUNT_KEY_PATH"
+# Prefer a local service account JSON in `./.secrets/` if present. This file must NOT be committed.
+if [ -z "$SERVICE_ACCOUNT_KEY_PATH" ]; then
+  if [ -f "./.secrets/service-account.json" ]; then
+    export SERVICE_ACCOUNT_KEY_PATH="$(pwd)/.secrets/service-account.json"
+    echo "Using local service account at $SERVICE_ACCOUNT_KEY_PATH"
+  elif [ -f "./.secrets/agenda-solar-989128d1b184.json" ]; then
+    export SERVICE_ACCOUNT_KEY_PATH="$(pwd)/.secrets/agenda-solar-989128d1b184.json"
+    echo "Using local service account at $SERVICE_ACCOUNT_KEY_PATH"
+  fi
 fi
 
 # Colors

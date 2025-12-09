@@ -7,6 +7,7 @@
 
 const admin = require('firebase-admin');
 const fs = require('fs');
+const path = require('path');
 
 // Helper to initialize admin with flexible credential sources.
 function initFirebaseAdmin() {
@@ -23,6 +24,22 @@ function initFirebaseAdmin() {
       credential: admin.credential.cert(key),
       projectId
     });
+  }
+
+  // 1b) Repository-local `.secrets` folder (convenience)
+  // Look relative to the repo root (one level up from functions/)
+  const repoSecrets = [
+    path.join(__dirname, '..', '.secrets', 'service-account.json'),
+    path.join(__dirname, '..', '.secrets', 'agenda-solar-989128d1b184.json')
+  ];
+  for (const candidate of repoSecrets) {
+    if (fs.existsSync(candidate)) {
+      const key = require(candidate);
+      return admin.initializeApp({
+        credential: admin.credential.cert(key),
+        projectId
+      });
+    }
   }
 
   // 2) Base64 encoded JSON in env var

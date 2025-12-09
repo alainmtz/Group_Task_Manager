@@ -52,6 +52,10 @@ GeneratedPluginRegistrant.java
 # Service account key (do NOT commit)
 /app/agenda-solar-989128d1b184.json
 
+# Local secrets directory (do NOT commit)
+.secrets/
+.secrets/*.json
+
 
 # Keystore files (security)
 **/*.keystore

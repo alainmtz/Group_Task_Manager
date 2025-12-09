@@ -124,6 +124,17 @@ if (process.env.WRITE_DIRECT === '1') {
       const key = require(keyPath);
       return admin.initializeApp({ credential: admin.credential.cert(key), projectId });
     }
+    // Repository-local `.secrets` folder (convenience)
+    const repoSecrets = [
+      './.secrets/service-account.json',
+      './.secrets/agenda-solar-989128d1b184.json'
+    ];
+    for (const candidate of repoSecrets) {
+      if (fs.existsSync(candidate)) {
+        const key = require(candidate);
+        return admin.initializeApp({ credential: admin.credential.cert(key), projectId });
+      }
+    }
     if (process.env.SERVICE_ACCOUNT_KEY_JSON) {
       const raw = Buffer.from(process.env.SERVICE_ACCOUNT_KEY_JSON, 'base64').toString();
       const key = JSON.parse(raw);
