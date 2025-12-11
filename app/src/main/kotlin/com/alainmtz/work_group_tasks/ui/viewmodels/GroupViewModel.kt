@@ -2,10 +2,15 @@ package com.alainmtz.work_group_tasks.ui.viewmodels
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.alainmtz.work_group_tasks.domain.models.Company
 import com.alainmtz.work_group_tasks.domain.models.Group
 import com.alainmtz.work_group_tasks.domain.models.NotificationType
+import com.alainmtz.work_group_tasks.domain.models.PlanTier
 import com.alainmtz.work_group_tasks.domain.models.User
 import com.alainmtz.work_group_tasks.domain.services.NotificationService
+import com.alainmtz.work_group_tasks.domain.services.CompanyPlanProvider
+import com.alainmtz.work_group_tasks.domain.services.FeatureFlags
+import com.alainmtz.work_group_tasks.domain.audit.*
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.NonCancellable
@@ -21,6 +26,7 @@ class GroupViewModel : ViewModel() {
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
     private val notificationService = NotificationService()
+    private val auditLogger = AuditLogger(db)
     private val groupsCollection = db.collection("groups")
     private val chatThreadsCollection = db.collection("chatThreads")
 
@@ -83,15 +89,20 @@ class GroupViewModel : ViewModel() {
         }
     }
 
-    fun fetchUserGroups() {
+    fun fetchUserGroups(forceRefresh: Boolean = false) {
         val userId = auth.currentUser?.uid ?: return
+        android.util.Log.d("GroupViewModel", "fetchUserGroups called (forceRefresh=$forceRefresh) for user: $userId")
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val snapshot = groupsCollection
-                    .whereArrayContains("memberIds", userId)
-                    .get()
-                    .await()
+                val query = groupsCollection.whereArrayContains("memberIds", userId)
+                val snapshot = if (forceRefresh) {
+                    // Force fetch from server, not cache
+                    android.util.Log.d("GroupViewModel", "Fetching from SERVER...")
+                    query.get(com.google.firebase.firestore.Source.SERVER).await()
+                } else {
+                    query.get().await()
+                }
 
                 val fetchedGroups = snapshot.documents.map { doc ->
                     val group = Group.fromFirestore(doc)
@@ -115,9 +126,11 @@ class GroupViewModel : ViewModel() {
                         group
                     }
                 }
+                android.util.Log.d("GroupViewModel", "Fetched ${fetchedGroups.size} groups: ${fetchedGroups.map { it.name }}")
                 _groups.value = fetchedGroups
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+                android.util.Log.e("GroupViewModel", "Error fetching groups", e)
                 _error.value = e.message
             } finally {
                 _isLoading.value = false
@@ -127,9 +140,34 @@ class GroupViewModel : ViewModel() {
 
     fun createGroup(name: String, onSuccess: () -> Unit) {
         val userId = auth.currentUser?.uid ?: return
+        android.util.Log.d("GroupViewModel", "createGroup called with name: $name, current groups: ${_groups.value.size}")
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                // Check if user can create more groups
+                val company = CompanyPlanProvider.currentCompany.value
+                val plan = CompanyPlanProvider.currentPlan.value
+                android.util.Log.d("GroupViewModel", "Limit check - company: ${company?.id}, plan: ${plan.tier}, current groups: ${_groups.value.size}")
+                
+                // If no company, create a virtual FREE company for limit checking
+                val effectiveCompany = company ?: Company(
+                    id = "temp",
+                    planId = "free",
+                    planTier = PlanTier.FREE,
+                    groupsCount = _groups.value.size, // Current group count
+                    ownerId = userId
+                )
+                
+                val (canCreate, reason) = FeatureFlags.canCreateGroup(effectiveCompany, plan)
+                android.util.Log.d("GroupViewModel", "Limit check result - canCreate: $canCreate, reason: $reason")
+                if (!canCreate) {
+                    android.util.Log.e("GroupViewModel", "GROUP LIMIT REACHED: $reason")
+                    _error.value = reason ?: "Group limit reached - upgrade to create more groups"
+                    _isLoading.value = false
+                    return@launch
+                }
+                android.util.Log.d("GroupViewModel", "Limit check passed, creating group...")
+                
                 val code = java.util.UUID.randomUUID().toString().substring(0, 6).uppercase()
                 val newGroup = hashMapOf(
                     "name" to name,
@@ -140,6 +178,14 @@ class GroupViewModel : ViewModel() {
                 )
                 
                 val groupRef = groupsCollection.add(newGroup).await()
+                
+                // Update company groupsCount if user has a company
+                if (company != null) {
+                    db.collection("companies")
+                        .document(company.id)
+                        .update("groupsCount", com.google.firebase.firestore.FieldValue.increment(1))
+                        .await()
+                }
                 
                 // Create associated ChatThread
                 val newThread = hashMapOf(
@@ -328,6 +374,20 @@ class GroupViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                // Check if user can add more members
+                val company = CompanyPlanProvider.currentCompany.value
+                val plan = CompanyPlanProvider.currentPlan.value
+                if (company != null) {
+                    val groupDoc = groupsCollection.document(groupId).get().await()
+                    val currentMemberCount = (groupDoc.get("memberIds") as? List<*>)?.size ?: 0
+                    val (canAdd, reason) = FeatureFlags.canAddMember(currentMemberCount, plan)
+                    if (!canAdd) {
+                        _error.value = reason ?: "Cannot add member: plan limit reached"
+                        _isLoading.value = false
+                        return@launch
+                    }
+                }
+                
                 groupsCollection.document(groupId)
                     .update("memberIds", com.google.firebase.firestore.FieldValue.arrayUnion(userId))
                     .await()
@@ -425,26 +485,477 @@ class GroupViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                groupsCollection.document(groupId)
-                    .update("memberIds", com.google.firebase.firestore.FieldValue.arrayRemove(userId))
-                    .await()
-                
-                updateChatThreadMembers(groupId, userId, false)
-                
-                // Refresh the group to update the UI
-                loadGroup(groupId)
+                removeMemberInternal(groupId, userId)
                 onSuccess()
             } catch (e: Exception) {
                 _error.value = e.message
+                android.util.Log.e("GroupViewModel", "Error removing member", e)
             } finally {
                 _isLoading.value = false
             }
         }
     }
 
+    private suspend fun removeMemberInternal(groupId: String, userId: String) {
+        // Update chat thread FIRST (before removing from group)
+        // This way the user still has permissions to query the chat thread
+        updateChatThreadMembers(groupId, userId, false)
+        
+        // Then remove from group
+        groupsCollection.document(groupId)
+            .update("memberIds", com.google.firebase.firestore.FieldValue.arrayRemove(userId))
+            .await()
+        
+        // DON'T refresh the group if removing current user (they won't have permissions)
+        val currentUserId = auth.currentUser?.uid
+        if (userId != currentUserId) {
+            // Only reload if removing someone else
+            loadGroup(groupId)
+        }
+    }
+
     fun leaveGroup(groupId: String, onSuccess: () -> Unit) {
         val userId = auth.currentUser?.uid ?: return
-        removeMember(groupId, userId, onSuccess)
+        viewModelScope.launch {
+            _isLoading.value = true
+            var operationSuccessful = false
+            try {
+                // Get group to check member count and creator
+                val groupDoc = groupsCollection.document(groupId).get().await()
+                if (!groupDoc.exists()) {
+                    _error.value = "Group not found"
+                    auditLogger.log(AuditEvent(
+                        userId = userId,
+                        action = AuditAction.GROUP_LEAVE,
+                        resource = AuditResource.GROUP,
+                        resourceId = groupId,
+                        status = AuditStatus.FAILED,
+                        errorDetails = ErrorDetails(
+                            errorType = "NotFound",
+                            errorMessage = "Group does not exist",
+                            canRetry = false
+                        )
+                    ))
+                    return@launch
+                }
+                
+                val group = Group.fromFirestore(groupDoc)
+                val isCreator = group.creatorId == userId
+                val memberCount = group.memberIds.size
+                
+                // If user is the only member or is the creator, delete the group
+                if (memberCount <= 1 || isCreator) {
+                    val result = deleteGroupInternal(groupId)
+                    operationSuccessful = result.success
+                } else {
+                    // Just remove the member
+                    removeMemberInternal(groupId, userId)
+                    auditLogger.log(AuditEvent(
+                        userId = userId,
+                        action = AuditAction.GROUP_LEAVE,
+                        resource = AuditResource.GROUP,
+                        resourceId = groupId,
+                        status = AuditStatus.SUCCESS,
+                        metadata = mapOf(
+                            "remainingMembers" to (memberCount - 1)
+                        )
+                    ))
+                    operationSuccessful = true
+                }
+            } catch (e: Exception) {
+                auditLogger.log(AuditEvent(
+                    userId = userId,
+                    action = AuditAction.GROUP_LEAVE,
+                    resource = AuditResource.GROUP,
+                    resourceId = groupId,
+                    status = AuditStatus.FAILED,
+                    errorDetails = ErrorDetails(
+                        errorType = e::class.simpleName ?: "Unknown",
+                        errorMessage = e.message ?: "Unknown error",
+                        canRetry = true
+                    )
+                ))
+                
+                // Don't block navigation if it's a permission error (likely successful)
+                if (e.message?.contains("PERMISSION_DENIED") != true) {
+                    _error.value = e.message
+                } else {
+                    operationSuccessful = true
+                }
+            } finally {
+                _isLoading.value = false
+                // Refresh the groups list to remove the group from UI
+                if (operationSuccessful) {
+                    fetchUserGroups(forceRefresh = true)
+                    onSuccess()
+                }
+            }
+        }
+    }
+
+    fun deleteGroup(groupId: String, onSuccess: () -> Unit) {
+        val userId = auth.currentUser?.uid ?: return
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                // Verify user is the creator
+                val groupDoc = groupsCollection.document(groupId).get().await()
+                if (!groupDoc.exists()) {
+                    _error.value = "Group not found"
+                    auditLogger.log(AuditEvent(
+                        userId = userId,
+                        action = AuditAction.GROUP_DELETE,
+                        resource = AuditResource.GROUP,
+                        resourceId = groupId,
+                        status = AuditStatus.FAILED,
+                        errorDetails = ErrorDetails(
+                            errorType = "NotFound",
+                            errorMessage = "Group does not exist",
+                            canRetry = false
+                        )
+                    ))
+                    return@launch
+                }
+                
+                val group = Group.fromFirestore(groupDoc)
+                if (group.creatorId != userId) {
+                    _error.value = "Only the creator can delete this group"
+                    auditLogger.log(AuditEvent(
+                        userId = userId,
+                        action = AuditAction.GROUP_DELETE,
+                        resource = AuditResource.GROUP,
+                        resourceId = groupId,
+                        status = AuditStatus.FAILED,
+                        errorDetails = ErrorDetails(
+                            errorType = "Unauthorized",
+                            errorMessage = "User is not the group creator",
+                            canRetry = false
+                        )
+                    ))
+                    return@launch
+                }
+                
+                val result = deleteGroupInternal(groupId)
+                if (result.success) {
+                    onSuccess()
+                }
+            } catch (e: Exception) {
+                _error.value = e.message
+                android.util.Log.e("GroupViewModel", "Error deleting group", e)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    private suspend fun deleteGroupInternal(groupId: String): OperationResult {
+        val userId = auth.currentUser?.uid ?: "unknown"
+        val auditEvents = mutableListOf<AuditEvent>()
+        var criticalSuccess = false
+        var taskCount = 0
+        var companyId: String? = null
+        var companyPlan: String? = null
+        val operationStartTime = System.currentTimeMillis()
+
+        try {
+            // Step 1: Get group metadata
+            val groupDoc = groupsCollection.document(groupId).get().await()
+            if (groupDoc.exists()) {
+                val group = Group.fromFirestore(groupDoc)
+                companyId = group.companyId
+                
+                // Get company plan for context
+                if (companyId != null) {
+                    try {
+                        val companyDoc = db.collection("companies").document(companyId).get().await()
+                        companyPlan = companyDoc.getString("plan") ?: "FREE"
+                    } catch (e: Exception) {
+                        // Plan info is optional
+                    }
+                }
+            }
+            
+            // Create shared operation context
+            val operationContext = OperationContext(
+                companyId = companyId,
+                companyPlan = companyPlan,
+                sourceScreen = "GroupDetailScreen",
+                triggerType = "USER_ACTION"
+            )
+            
+            // Step 2: Delete chat thread (best effort - may fail due to permissions)
+            val chatStartTime = System.currentTimeMillis()
+            val chatEvent = try {
+                val chatSnapshot = chatThreadsCollection
+                    .whereEqualTo("groupId", groupId)
+                    .limit(1)
+                    .get()
+                    .await()
+                
+                val chatDuration = System.currentTimeMillis() - chatStartTime
+                
+                if (!chatSnapshot.isEmpty) {
+                    val chatId = chatSnapshot.documents.first().id
+                    chatThreadsCollection.document(chatId).delete().await()
+                    
+                    AuditEvent(
+                        userId = userId,
+                        action = AuditAction.CHAT_DELETE,
+                        resource = AuditResource.CHAT_THREAD,
+                        resourceId = chatId,
+                        status = AuditStatus.SUCCESS,
+                        metadata = mapOf("groupId" to groupId),
+                        metrics = OperationMetrics(
+                            durationMs = chatDuration,
+                            resourcesAffected = 1
+                        ),
+                        context = operationContext
+                    )
+                } else {
+                    AuditEvent(
+                        userId = userId,
+                        action = AuditAction.CHAT_DELETE,
+                        resource = AuditResource.CHAT_THREAD,
+                        resourceId = "none",
+                        status = AuditStatus.SKIPPED,
+                        metadata = mapOf("reason" to "No chat thread found", "groupId" to groupId),
+                        metrics = OperationMetrics(durationMs = chatDuration),
+                        context = operationContext
+                    )
+                }
+            } catch (e: Exception) {
+                val chatDuration = System.currentTimeMillis() - chatStartTime
+                AuditEvent(
+                    userId = userId,
+                    action = AuditAction.CHAT_DELETE,
+                    resource = AuditResource.CHAT_THREAD,
+                    resourceId = groupId,
+                    status = if (e.message?.contains("PERMISSION_DENIED") == true) 
+                        AuditStatus.PERMISSION_DENIED 
+                    else 
+                        AuditStatus.FAILED,
+                    errorDetails = ErrorDetails(
+                        errorType = e::class.simpleName ?: "Unknown",
+                        errorMessage = e.message ?: "Unknown error",
+                        canRetry = false,
+                        affectedOperations = listOf("chatThread.delete")
+                    ),
+                    metrics = OperationMetrics(durationMs = chatDuration),
+                    context = operationContext
+                )
+            }
+            auditEvents.add(chatEvent)
+            
+            // Step 3: Delete tasks (best effort - may fail due to permissions)
+            val taskStartTime = System.currentTimeMillis()
+            val taskEvents = try {
+                val tasksSnapshot = db.collection("tasks")
+                    .whereEqualTo("groupId", groupId)
+                    .get()
+                    .await()
+                
+                taskCount = tasksSnapshot.documents.size
+                val deletedTasks = mutableListOf<String>()
+                
+                tasksSnapshot.documents.forEach { taskDoc ->
+                    try {
+                        taskDoc.reference.delete().await()
+                        deletedTasks.add(taskDoc.id)
+                    } catch (e: Exception) {
+                        // Log individual task deletion failure but continue
+                    }
+                }
+                
+                val taskDuration = System.currentTimeMillis() - taskStartTime
+                
+                if (deletedTasks.size == taskCount) {
+                    listOf(AuditEvent(
+                        userId = userId,
+                        action = AuditAction.TASK_DELETE,
+                        resource = AuditResource.TASK,
+                        resourceId = groupId,
+                        status = AuditStatus.SUCCESS,
+                        metadata = mapOf(
+                            "tasksDeleted" to deletedTasks.size,
+                            "taskIds" to deletedTasks
+                        ),
+                        metrics = OperationMetrics(
+                            durationMs = taskDuration,
+                            resourcesAffected = deletedTasks.size
+                        ),
+                        context = operationContext
+                    ))
+                } else {
+                    listOf(AuditEvent(
+                        userId = userId,
+                        action = AuditAction.TASK_DELETE,
+                        resource = AuditResource.TASK,
+                        resourceId = groupId,
+                        status = AuditStatus.PARTIAL_SUCCESS,
+                        metadata = mapOf(
+                            "tasksDeleted" to deletedTasks.size,
+                            "totalTasks" to taskCount
+                        ),
+                        metrics = OperationMetrics(
+                            durationMs = taskDuration,
+                            resourcesAffected = deletedTasks.size
+                        ),
+                        context = operationContext
+                    ))
+                }
+            } catch (e: Exception) {
+                val taskDuration = System.currentTimeMillis() - taskStartTime
+                listOf(AuditEvent(
+                    userId = userId,
+                    action = AuditAction.TASK_DELETE,
+                    resource = AuditResource.TASK,
+                    resourceId = groupId,
+                    status = if (e.message?.contains("PERMISSION_DENIED") == true) 
+                        AuditStatus.PERMISSION_DENIED 
+                    else 
+                        AuditStatus.FAILED,
+                    errorDetails = ErrorDetails(
+                        errorType = e::class.simpleName ?: "Unknown",
+                        errorMessage = e.message ?: "Unknown error",
+                        canRetry = false,
+                        affectedOperations = listOf("tasks.query", "tasks.delete")
+                    ),
+                    metrics = OperationMetrics(durationMs = taskDuration),
+                    context = operationContext
+                ))
+            }
+            auditEvents.addAll(taskEvents)
+            
+            // Step 4: Delete group (CRITICAL - must succeed)
+            val groupStartTime = System.currentTimeMillis()
+            try {
+                groupsCollection.document(groupId).delete().await()
+                criticalSuccess = true
+                val groupDuration = System.currentTimeMillis() - groupStartTime
+                
+                auditEvents.add(AuditEvent(
+                    userId = userId,
+                    action = AuditAction.GROUP_DELETE,
+                    resource = AuditResource.GROUP,
+                    resourceId = groupId,
+                    status = AuditStatus.SUCCESS,
+                    metadata = mapOf(
+                        "companyId" to (companyId ?: "unknown"),
+                        "tasksAffected" to taskCount
+                    ),
+                    metrics = OperationMetrics(
+                        durationMs = groupDuration,
+                        resourcesAffected = 1
+                    ),
+                    context = operationContext
+                ))
+            } catch (e: Exception) {
+                val groupDuration = System.currentTimeMillis() - groupStartTime
+                auditEvents.add(AuditEvent(
+                    userId = userId,
+                    action = AuditAction.GROUP_DELETE,
+                    resource = AuditResource.GROUP,
+                    resourceId = groupId,
+                    status = AuditStatus.FAILED,
+                    errorDetails = ErrorDetails(
+                        errorType = e::class.simpleName ?: "Unknown",
+                        errorMessage = e.message ?: "Unknown error",
+                        canRetry = true,
+                        affectedOperations = listOf("group.delete")
+                    ),
+                    metrics = OperationMetrics(durationMs = groupDuration),
+                    context = operationContext
+                ))
+                throw e // Critical failure - must propagate
+            }
+            
+            // Step 5: Update company counters (best effort)
+            if (companyId != null) {
+                val counterStartTime = System.currentTimeMillis()
+                val counterEvent = try {
+                    db.collection("companies")
+                        .document(companyId)
+                        .update(
+                            mapOf(
+                                "groupsCount" to com.google.firebase.firestore.FieldValue.increment(-1),
+                                "activeTasksCount" to com.google.firebase.firestore.FieldValue.increment(-taskCount.toLong())
+                            )
+                        )
+                        .await()
+                    
+                    val counterDuration = System.currentTimeMillis() - counterStartTime
+                    
+                    AuditEvent(
+                        userId = userId,
+                        action = AuditAction.COUNTER_UPDATE,
+                        resource = AuditResource.COMPANY_COUNTER,
+                        resourceId = companyId,
+                        status = AuditStatus.SUCCESS,
+                        metadata = mapOf(
+                            "groupsDecrement" to -1,
+                            "tasksDecrement" to -taskCount
+                        ),
+                        metrics = OperationMetrics(
+                            durationMs = counterDuration,
+                            resourcesAffected = 2 // groupsCount + activeTasksCount
+                        ),
+                        context = operationContext
+                    )
+                } catch (e: Exception) {
+                    val counterDuration = System.currentTimeMillis() - counterStartTime
+                    AuditEvent(
+                        userId = userId,
+                        action = AuditAction.COUNTER_UPDATE,
+                        resource = AuditResource.COMPANY_COUNTER,
+                        resourceId = companyId,
+                        status = AuditStatus.FAILED,
+                        errorDetails = ErrorDetails(
+                            errorType = e::class.simpleName ?: "Unknown",
+                            errorMessage = e.message ?: "Unknown error",
+                            canRetry = true,
+                            affectedOperations = listOf("company.counters.update")
+                        ),
+                        metrics = OperationMetrics(durationMs = counterDuration),
+                        context = operationContext
+                    )
+                }
+                auditEvents.add(counterEvent)
+            }
+            
+        } catch (e: Exception) {
+            // Critical failure already logged in audit events
+            if (!criticalSuccess) {
+                throw e
+            }
+        }
+        
+        // Calculate total metrics
+        val totalDuration = System.currentTimeMillis() - operationStartTime
+        val totalResourcesAffected = auditEvents.sumOf { it.metrics?.resourcesAffected ?: 0 }
+        
+        // Generate operation result
+        val summary = OperationSummary(
+            totalOperations = auditEvents.size,
+            successfulOperations = auditEvents.count { it.status == AuditStatus.SUCCESS },
+            failedOperations = auditEvents.count { 
+                it.status == AuditStatus.FAILED || it.status == AuditStatus.PERMISSION_DENIED 
+            },
+            skippedOperations = auditEvents.count { it.status == AuditStatus.SKIPPED },
+            criticalOperationSuccess = criticalSuccess,
+            totalDurationMs = totalDuration,
+            resourcesAffected = totalResourcesAffected
+        )
+        
+        val result = OperationResult(
+            success = criticalSuccess,
+            events = auditEvents,
+            summary = summary
+        )
+        
+        // Log complete audit trail
+        auditLogger.logOperationResult(result)
+        
+        return result
     }
 
     fun getGroupChatThreadId(groupId: String, onSuccess: (String) -> Unit) {

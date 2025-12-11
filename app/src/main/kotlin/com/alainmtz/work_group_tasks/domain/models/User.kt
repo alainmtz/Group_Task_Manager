@@ -12,13 +12,20 @@ data class User(
     val phoneNumber: String? = null,
     val photoUrl: String? = null,
     val companyId: String? = null,
-    val role: String = "member",
+    val role: CompanyRole? = null,
     val storageUsedBytes: Long = 0L,
     val uploadCountThisMonth: Int = 0
 ) : Parcelable {
     companion object {
         fun fromFirestore(doc: DocumentSnapshot): User {
             val data = doc.data!!
+            val roleString = data["role"] as? String
+            val companyRole = when (roleString?.uppercase()) {
+                "OWNER" -> CompanyRole.OWNER
+                "ADMIN" -> CompanyRole.ADMIN
+                "MEMBER" -> CompanyRole.MEMBER
+                else -> null
+            }
             return User(
                 id = doc.id,
                 email = data["email"] as? String ?: "",
@@ -26,7 +33,7 @@ data class User(
                 phoneNumber = data["phoneNumber"] as? String,
                 photoUrl = data["photoUrl"] as? String,
                 companyId = data["companyId"] as? String,
-                role = data["role"] as? String ?: "member",
+                role = companyRole,
                 storageUsedBytes = (data["storageUsedBytes"] as? Number)?.toLong() ?: 0L,
                 uploadCountThisMonth = (data["uploadCountThisMonth"] as? Number)?.toInt() ?: 0
             )

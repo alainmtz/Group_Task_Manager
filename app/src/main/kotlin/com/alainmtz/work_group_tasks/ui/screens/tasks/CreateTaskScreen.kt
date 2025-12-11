@@ -17,6 +17,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.alainmtz.work_group_tasks.domain.models.Group
 import com.alainmtz.work_group_tasks.domain.models.TaskPriority
 import com.alainmtz.work_group_tasks.domain.models.User
+import com.alainmtz.work_group_tasks.domain.models.PlanTier
+import com.alainmtz.work_group_tasks.domain.services.CompanyPlanProvider
+import com.alainmtz.work_group_tasks.ui.components.UpgradeSnackbar
 import com.alainmtz.work_group_tasks.ui.viewmodels.ChatViewModel
 import com.alainmtz.work_group_tasks.ui.viewmodels.GroupViewModel
 import com.alainmtz.work_group_tasks.ui.viewmodels.TaskViewModel
@@ -27,6 +30,7 @@ import java.util.*
 @Composable
 fun CreateTaskScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToPaywall: () -> Unit,
     groupId: String? = null,
     viewModel: TaskViewModel = viewModel(),
     groupViewModel: GroupViewModel = viewModel(),
@@ -58,6 +62,22 @@ fun CreateTaskScreen(
     }
 
     val isLoading by viewModel.isLoading.collectAsState()
+    val error by viewModel.error.collectAsState()
+    val plan = CompanyPlanProvider.currentPlan.collectAsState().value
+    
+    var showUpgradePrompt by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    
+    // Show error as snackbar
+    LaunchedEffect(error) {
+        error?.let {
+            if (it.contains("limit", ignoreCase = true)) {
+                showUpgradePrompt = true
+            } else {
+                snackbarHostState.showSnackbar(it)
+            }
+        }
+    }
 
     if (showDatePicker) {
         val datePickerState = rememberDatePickerState(
@@ -99,14 +119,16 @@ fun CreateTaskScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .padding(paddingValues)
-                .padding(16.dp)
-                .fillMaxSize()
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .padding(paddingValues)
+                    .padding(16.dp)
+                    .fillMaxSize()
+            ) {
             ExposedDropdownMenuBox(
                 expanded = showGroupDropdown,
                 onExpandedChange = { showGroupDropdown = !showGroupDropdown },
@@ -199,6 +221,24 @@ fun CreateTaskScreen(
                 }
             }
         }
+        
+        if (showUpgradePrompt) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp)
+            ) {
+                UpgradeSnackbar(
+                    message = error ?: "Task limit reached - upgrade to create more tasks",
+                    onUpgradeClick = { 
+                        showUpgradePrompt = false
+                        onNavigateToPaywall()
+                    },
+                    onDismiss = { showUpgradePrompt = false }
+                )
+            }
+        }
+    }
     }
 }
 

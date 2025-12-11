@@ -12,8 +12,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Brightness4
@@ -43,6 +45,9 @@ fun ProfileScreen(
     onNavigateBack: () -> Unit,
     onSignOut: () -> Unit,
     onNavigateToImageCrop: (Uri) -> Unit,
+    onNavigateToCompanyManagement: () -> Unit,
+    onNavigateToBilling: () -> Unit,
+    onNavigateToPaywall: () -> Unit,
     authViewModel: AuthViewModel,
     themeViewModel: ThemeViewModel
 ) {
@@ -438,7 +443,8 @@ fun ProfileScreen(
             modifier = Modifier
                 .padding(paddingValues)
                 .padding(16.dp)
-                .fillMaxSize(),
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
         ) {
@@ -659,6 +665,34 @@ fun ProfileScreen(
                 )
             ) {
                 Text(if (hasPassword) "Change Password" else "Create Password")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Company Management Button
+            Button(
+                onClick = onNavigateToCompanyManagement,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            ) {
+                Text("🏢 Manage Company")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Billing & Subscription Button
+            Button(
+                onClick = onNavigateToBilling,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            ) {
+                Text("💳 Billing & Subscription")
             }
 
             Spacer(modifier = Modifier.weight(1f))

@@ -32,6 +32,9 @@ import com.alainmtz.work_group_tasks.ui.screens.profile.ImageCropScreen
 import com.alainmtz.work_group_tasks.ui.screens.profile.ProfileScreen
 import com.alainmtz.work_group_tasks.ui.screens.tasks.CreateTaskScreen
 import com.alainmtz.work_group_tasks.ui.screens.tasks.TaskDetailScreen
+import com.alainmtz.work_group_tasks.ui.screens.company.CompanyManagementScreen
+import com.alainmtz.work_group_tasks.ui.screens.PaywallScreen
+import com.alainmtz.work_group_tasks.ui.screens.BillingScreen
 import com.alainmtz.work_group_tasks.ui.settings.Theme
 import com.alainmtz.work_group_tasks.ui.theme.CollaborativeTasksTheme
 import com.alainmtz.work_group_tasks.ui.viewmodels.AuthViewModel
@@ -131,7 +134,8 @@ fun CollaborativeTasksApp(
                         onNavigateToCreateGroup = { navController.navigate("create_group") },
                         onNavigateToProfile = { navController.navigate("profile") },
                         onNavigateToChatDetail = { threadId -> navController.navigate("chat_detail/$threadId") },
-                        onNavigateToNewChat = { navController.navigate("new_chat") }
+                        onNavigateToNewChat = { navController.navigate("new_chat") },
+                        onNavigateToPaywall = { navController.navigate("paywall") }
                     )
                 }
                 composable("profile") {
@@ -146,6 +150,9 @@ fun CollaborativeTasksApp(
                             val encodedUri = URLEncoder.encode(uri.toString(), StandardCharsets.UTF_8.toString())
                             navController.navigate("image_crop/$encodedUri")
                         },
+                        onNavigateToCompanyManagement = { navController.navigate("company_management") },
+                        onNavigateToBilling = { navController.navigate("billing") },
+                        onNavigateToPaywall = { navController.navigate("paywall") },
                         authViewModel = authViewModel,
                         themeViewModel = themeViewModel
                     )
@@ -167,6 +174,7 @@ fun CollaborativeTasksApp(
                     val groupId = backStackEntry.arguments?.getString("groupId")
                     CreateTaskScreen(
                         onNavigateBack = { navController.popBackStack() },
+                        onNavigateToPaywall = { navController.navigate("paywall") },
                         groupId = groupId
                     )
                 }
@@ -181,7 +189,8 @@ fun CollaborativeTasksApp(
                 }
                 composable("create_group") {
                     CreateGroupScreen(
-                        onNavigateBack = { navController.popBackStack() }
+                        onNavigateBack = { navController.popBackStack() },
+                        onNavigateToPaywall = { navController.navigate("paywall") }
                     )
                 }
                 composable("group_detail/{groupId}") { backStackEntry ->
@@ -213,6 +222,60 @@ fun CollaborativeTasksApp(
                                 popUpTo("new_chat") { inclusive = true }
                             }
                         }
+                    )
+                }
+                composable("company_management") {
+                    CompanyManagementScreen(
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable("billing") {
+                    val company = com.alainmtz.work_group_tasks.domain.services.CompanyPlanProvider.currentCompany.value
+                    val plan = com.alainmtz.work_group_tasks.domain.services.CompanyPlanProvider.currentPlan.value
+                    
+                    // Get user's actual metrics from ViewModels
+                    val groupViewModel: com.alainmtz.work_group_tasks.ui.viewmodels.GroupViewModel = viewModel()
+                    val taskViewModel: com.alainmtz.work_group_tasks.ui.viewmodels.TaskViewModel = viewModel()
+                    
+                    val userGroups by groupViewModel.groups.collectAsState()
+                    val userTasks by taskViewModel.tasks.collectAsState()
+                    val activeTasks = userTasks.filter { it.status != com.alainmtz.work_group_tasks.domain.models.TaskStatus.COMPLETED }
+                    
+                    // Create effective company with real user metrics
+                    val effectiveCompany = company ?: com.alainmtz.work_group_tasks.domain.models.Company(
+                        id = "temp",
+                        name = "Personal Account",
+                        ownerId = authViewModel.currentUser.value?.uid ?: "",
+                        planId = "free",
+                        planTier = com.alainmtz.work_group_tasks.domain.models.PlanTier.FREE,
+                        groupsCount = userGroups.size,
+                        activeTasksCount = activeTasks.size,
+                        storageUsedBytes = 0L, // TODO: Calculate from actual data if needed
+                        photosUploadedThisMonth = 0 // TODO: Calculate from actual data if needed
+                    )
+                    
+                    BillingScreen(
+                        company = effectiveCompany,
+                        plan = plan,
+                        onUpgradeClick = { navController.navigate("paywall") },
+                        onCancelSubscription = {
+                            // TODO: Implement cancel subscription flow
+                        },
+                        onUpdatePaymentMethod = {
+                            // TODO: Open Google Play Billing
+                        },
+                        onBackClick = { navController.popBackStack() }
+                    )
+                }
+                composable("paywall") {
+                    PaywallScreen(
+                        currentPlan = com.alainmtz.work_group_tasks.domain.services.CompanyPlanProvider.currentPlan.value,
+                        onUpgradeClick = { planId ->
+                            // TODO: Integrate Google Play Billing here
+                            // For now, just go back
+                            navController.popBackStack()
+                        },
+                        onBackClick = { navController.popBackStack() }
                     )
                 }
             }

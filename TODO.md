@@ -44,6 +44,55 @@
 - [x] **Theme System**: Color schemes + status bar
 - [x] **UI Icons**: In-app + notification badges
 
+## ✅ Stage 2: Subscription System - FULLY COMPLETE
+
+### Plan Models & Company Structure
+- [x] Plan data models (FREE, PRO, BUSINESS, ENTERPRISE)
+- [x] Company model with subscription fields
+- [x] PlanFeatures with all feature flags
+- [x] FeatureFlags service (14 check methods)
+- [x] Unit tests for FeatureFlags (42 tests, all passing)
+
+### CompanyPlanProvider & Integration
+- [x] Singleton provider with real-time listeners
+- [x] Auto-loads company/plan on Firebase Auth sign-in
+- [x] StateFlow integration for reactive UI
+- [x] FREE plan default for users without company
+- [x] Documentation (PLAN_INTEGRATION_GUIDE.md)
+
+### Firestore Setup
+- [x] Plans collection initialized (4 plans)
+- [x] Companies collection structure
+- [x] Owner company created for testing
+- [x] Firebase rules updated
+
+## ✅ Stage 4: Paywall UI & Feature Limits - COMPLETE
+
+### UI Components Created
+- [x] PaywallScreen - Full plan comparison with pricing
+- [x] UpgradePrompts - 4 reusable components (Dialog, Snackbar, Banner, Chip)
+- [x] UsageMetrics - Usage tracking with progress bars
+- [x] BillingScreen - Complete subscription management
+
+### Feature Restrictions Integrated
+- [x] GroupViewModel - Checks limits before creating groups/adding members
+- [x] TaskViewModel - Checks limits before creating tasks
+- [x] CreateGroupScreen - Shows upgrade prompts
+- [x] CreateTaskScreen - Shows upgrade prompts
+- [x] HomeScreen - Usage summary chip in toolbar
+
+### Company Management ✅ NEW
+- [x] CompanyService - Auto-create company on upgrade
+- [x] Data migration - Migrate user groups/tasks to company
+- [x] CompanyManagementScreen - Manage members, roles, settings
+- [x] CompanyManagementViewModel - State management
+- [x] Member management - Add, remove, change roles
+- [x] User.role field - Changed from String to CompanyRole enum
+- [x] Navigation integration - Added routes for billing, company_management, paywall
+- [x] ProfileScreen - Added navigation buttons to company/billing screens
+- [x] PaywallScreen - Auto-create company on upgrade integration
+- [x] HomeScreen - Added onNavigateToPaywall callback
+
 ## 🚧 Phase 2: Polish & Testing (In Progress)
 
 ### HIGH PRIORITY: Postponement UI ✅ COMPLETE
@@ -63,6 +112,45 @@
 - [x] **Postponement Notifications**: FCM for requests, accepts, and rejects
 - [x] **Reactive UI Updates**: UpdateEventBus → ViewModel → UI recomposition
 - [x] **14 Event Types**: Complete notification support for all events
+
+### HIGH PRIORITY: Stage 4 Manual Testing ✅ IN PROGRESS
+
+#### Completed Tests:
+- [x] **Test 1.1 - Group Creation Limit (FREE)**: Fully working
+  - Backend enforcement with "effective company" pattern
+  - Modern Material 3 Snackbar design (Card-based, elevated)
+  - Positioned at bottom center of screen
+  - Error message with upgrade prompt and star icon
+  - Enhanced logging for debugging
+- [x] **Test 7.1 - No Company Handling**: Complete solution
+  - Temporary "Personal Account" for users without company
+  - Billing & Subscription screen accessible
+  - Limits enforced correctly
+  - No crashes in any navigation
+  - FREE plan default applied
+
+#### UI/UX Improvements
+
+- [x] **UpgradeSnackbar Redesign**: Modern Material 3 design
+  - Card-based layout with primary container colors
+  - Circular icon background (40dp) with primary color
+  - Prominent button with star icon
+  - 6dp elevation for depth
+  - Rounded corners (12dp)
+  - Bottom center positioning with 16dp padding
+- [x] **Effective Company Pattern**: Applied to:
+  - GroupViewModel.createGroup() - For limit enforcement
+  - BillingScreen navigation - Shows "Personal Account"
+  - Future: TaskViewModel, other limit checks
+
+#### Pending Tests
+
+- [ ] Test 1.1 steps 9-10: UPGRADE button navigation to PaywallScreen
+- [ ] Test 1.2: Task Creation Limit (10 tasks max on FREE)
+- [ ] Test 1.3: Member Addition Limit (3 members max)
+- [ ] Test 1.4: Storage Limit Display (100 MB)
+- [ ] Test 1.5: Photo Upload Limit (10 photos/month)
+- [ ] Link user's actual metrics to effective company (groups, tasks, storage counts)
 
 ### HIGH PRIORITY: Testing & Validation
 
@@ -216,17 +304,58 @@
 #### 2.3 Feature Flags System ✅
 
 - [x] **Create `FeatureFlags` Object**: Runtime feature checking system
-- [x] **Feature Check Methods**: 10 methods returning Pair<Boolean, String?> with upgrade prompts
+- [x] **Feature Check Methods**: 14 methods returning Pair<Boolean, String?> with upgrade prompts
   - `canCreateGroup`, `canCreateTask`, `canAddMember`
   - `canUploadPhoto`, `canUploadFile` (storage quota)
   - `canUseBudgets`, `canUseApprovalHierarchy`
   - `canSendMultimedia`, `canUseAnalytics`, `canExportData`
-- [x] **Usage Tracking Utilities**: `getStorageUsagePercentage`, `getPhotoUsagePercentage`
+  - `canUseSSO`, `canUseAPI`, `canWhiteLabel`, `canUseAuditLogs` (Enterprise features)
+- [x] **Usage Tracking Utilities**: `getStorageUsagePercentage`, `getPhotoUsagePercentage`, `getSupportLevel`
 - [x] **Upgrade Suggestions**: Automatic next-tier recommendations in error messages
 
-**📄 Documentation**: See `STAGE2_IMPLEMENTATION.md` for complete details
+#### 2.4 Company & Plan Provider ✅
 
-**✅ Compilation Status**: BUILD SUCCESSFUL - All models compile without errors
+- [x] **Create `CompanyPlanProvider` Singleton**: Auto-loads company and plan on sign-in
+- [x] **Real-time Listeners**: Firestore listeners for company/plan updates
+- [x] **StateFlow Integration**: Expose `currentCompany`, `currentPlan`, `isLoading` flows
+- [x] **Application Initialization**: Integrated into `CollaborativeTasksApplication.onCreate()`
+- [x] **Example ViewModel**: `PlanAwareViewModel` demonstrates usage patterns
+
+#### 2.5 Unit Tests ✅
+
+- [x] **FeatureFlags Test Suite**: 42 comprehensive unit tests (all passing)
+  - 16 quantity limit tests (groups, tasks, members, photos, storage)
+  - 14 boolean feature tests (budgets, analytics, approval, export, etc.)
+  - 8 Enterprise feature tests (SSO, API, white-label, audit logs)
+  - 4 utility method tests (usage percentages, support levels)
+- [x] **Test Dependencies**: Added JUnit, Mockito, Coroutines test utilities
+- [x] **Test Coverage**: All plan tiers validated (FREE, PRO, BUSINESS, ENTERPRISE)
+
+#### 2.6 Firestore Plans Initialization ✅
+
+- [x] **Init Plans Script**: Node.js script to create plan documents in Firestore
+- [x] **Service Account Permissions**: Granted `datastore.user` role to bypass security rules
+- [x] **Plans Created**: All 4 plans (FREE, PRO, BUSINESS, ENTERPRISE) initialized in Firestore
+- [x] **Enterprise Company**: Created company document for owner with Enterprise plan
+
+#### 2.7 Documentation & Deployment ✅
+
+- [x] **Integration Guide**: `PLAN_INTEGRATION_GUIDE.md` with complete usage examples
+- [x] **Test Summary**: `FEATURE_FLAGS_TEST_SUMMARY.md` with 42 test breakdowns
+- [x] **Security Setup**: Service account keys rotated, uploaded to Secret Manager
+- [x] **Secrets Management**: Local `.secrets/` folder convention established
+- [x] **Firestore Rules**: Deployed rules with plan read access
+- [x] **Build Verification**: All code compiles successfully
+
+#### 📄 Documentation**
+
+- `STAGE2_IMPLEMENTATION.md` - Complete technical details
+- `PLAN_INTEGRATION_GUIDE.md` - Usage guide for ViewModels/Composables
+- `FEATURE_FLAGS_TEST_SUMMARY.md` - Test coverage breakdown
+
+**✅ Stage 2 Status**: FULLY COMPLETE - All infrastructure ready for UI implementation
+
+**🎯 Next Steps**: Stage 3 (Google Play Billing) or Stage 4 (Paywall UI & Feature Limits)
 
 ---
 
@@ -369,7 +498,7 @@
 
 ### Git Sync
 
-- [x] **sync with github repository** https://github.com/alainmtz/Group_Task_Manager.git ✅
+- [x] **sync with github repository** <https://github.com/alainmtz/Group_Task_Manager.git> ✅
   - Initial commit: 136 files, 22,295 lines
   - Optimized .gitignore: ~210MB of build files excluded
   - Pushed to main branch successfully

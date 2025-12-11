@@ -12,9 +12,11 @@ STAGE 2 focused on creating the subscription data infrastructure without UI chan
 ## New Models Created
 
 ### 1. `Plan.kt` ✅
+
 **Location**: `app/src/main/kotlin/com/alainmtz/work_group_tasks/domain/models/Plan.kt`
 
 **Components**:
+
 - `PlanTier` enum: FREE, PRO, BUSINESS, ENTERPRISE
 - `Plan` data class: Subscription plan entity
 - `PlanFeatures` data class: 18 feature flags and limits
@@ -22,6 +24,7 @@ STAGE 2 focused on creating the subscription data infrastructure without UI chan
 - `getStorageLimitBytes()` helper method
 
 **Key Features**:
+
 ```kotlin
 data class PlanFeatures(
     maxGroups: Int,              // -1 = unlimited
@@ -48,22 +51,26 @@ data class PlanFeatures(
 ---
 
 ### 2. `Company.kt` ✅
+
 **Location**: `app/src/main/kotlin/com/alainmtz/work_group_tasks/domain/models/Company.kt`
 
 **Purpose**: Represents an organization/company with subscription billing
 
 **Fields**:
+
 - Ownership: `ownerId`, `adminIds`, `memberIds`
 - Billing: `planId`, `planTier`, `subscriptionStatus`, `googlePlayPurchaseToken`
 - Dates: `subscriptionStartDate`, `nextBillingDate`, `lastPhotoResetDate`
 - Usage Tracking: `activeTasksCount`, `groupsCount`, `storageUsedBytes`, `photosUploadedThisMonth`
 
 **Helper Methods**:
+
 - `isOwner(userId)`: Check if user is company owner
 - `isAdmin(userId)`: Check if user is admin
 - `isMember(userId)`: Check if user is member
 
 **SubscriptionStatus Enum**:
+
 - ACTIVE: Subscription is active
 - CANCELED: User canceled, access until period end
 - EXPIRED: Subscription expired
@@ -73,11 +80,13 @@ data class PlanFeatures(
 ---
 
 ### 3. `CompanyRole.kt` ✅
+
 **Location**: `app/src/main/kotlin/com/alainmtz/work_group_tasks/domain/models/CompanyRole.kt`
 
 **Purpose**: Define member roles and permissions
 
 **Roles**:
+
 ```kotlin
 enum class CompanyRole {
     OWNER,    // Full control, can manage billing
@@ -87,6 +96,7 @@ enum class CompanyRole {
 ```
 
 **Permission Methods**:
+
 - `canManageBilling()`: Only OWNER
 - `canManageMembers()`: OWNER or ADMIN
 - `canManageSettings()`: OWNER or ADMIN
@@ -94,6 +104,7 @@ enum class CompanyRole {
 ---
 
 ### 4. `PlanDefaults.kt` ✅
+
 **Location**: `app/src/main/kotlin/com/alainmtz/work_group_tasks/domain/models/PlanDefaults.kt`
 
 **Purpose**: Predefined configurations for all 4 subscription tiers
@@ -101,6 +112,7 @@ enum class CompanyRole {
 **Plans Defined**:
 
 #### FREE Plan
+
 - 1 group, 5 members, 10 tasks
 - 100MB storage, 5 photos/month
 - Text-only chat
@@ -108,6 +120,7 @@ enum class CompanyRole {
 - ❌ No advanced features
 
 #### PRO Plan ($6.99/mo, $69/year)
+
 - Unlimited groups, 15 members, 50 tasks
 - 5GB storage, unlimited photos
 - ✅ Budgets & bidding
@@ -116,6 +129,7 @@ enum class CompanyRole {
 - Priority support
 
 #### BUSINESS Plan ($39/mo, $399/year)
+
 - Unlimited groups, 50 members, 200 tasks
 - 50GB storage, unlimited photos
 - ✅ All PRO features
@@ -126,6 +140,7 @@ enum class CompanyRole {
 - Dedicated support
 
 #### ENTERPRISE Plan (Custom Pricing)
+
 - Unlimited everything
 - ✅ All BUSINESS features
 - ✅ SSO/SAML
@@ -135,6 +150,7 @@ enum class CompanyRole {
 - Dedicated account manager
 
 **Helper Methods**:
+
 - `getPlanById(id)`: Get plan by ID string
 - `getPlanByTier(tier)`: Get plan by enum
 - `getAllPlans()`: Get all 4 plans
@@ -142,11 +158,13 @@ enum class CompanyRole {
 ---
 
 ### 5. `FeatureFlags.kt` ✅
+
 **Location**: `app/src/main/kotlin/com/alainmtz/work_group_tasks/domain/services/FeatureFlags.kt`
 
 **Purpose**: Runtime feature checking and limit validation
 
 **Feature Check Methods** (all return `Pair<Boolean, String?>`):
+
 - `canCreateGroup(company, plan)`: Check group limit
 - `canCreateTask(company, plan)`: Check task limit
 - `canAddMember(count, plan)`: Check member limit
@@ -159,10 +177,12 @@ enum class CompanyRole {
 - `canExportData(plan)`: Check export feature
 
 **Usage Tracking**:
+
 - `getStorageUsagePercentage(company, plan)`: 0-100%
 - `getPhotoUsagePercentage(company, plan)`: 0-100%
 
 **Upgrade Suggestions**:
+
 - Returns user-friendly messages: "Upgrade to PRO for unlimited uploads"
 - Automatically suggests next tier
 
@@ -171,7 +191,9 @@ enum class CompanyRole {
 ## Existing Models Updated
 
 ### 6. `User.kt` ✅
+
 **Changes**:
+
 ```kotlin
 data class User(
     // ... existing fields ...
@@ -185,7 +207,9 @@ data class User(
 ---
 
 ### 7. `Group.kt` ✅
+
 **Changes**:
+
 ```kotlin
 data class Group(
     // ... existing fields ...
@@ -196,7 +220,9 @@ data class Group(
 ---
 
 ### 8. `Task.kt` ✅
+
 **Changes**:
+
 ```kotlin
 data class Task(
     // ... existing fields ...
@@ -210,7 +236,9 @@ data class Task(
 ---
 
 ### 9. `Earning.kt` ✅
+
 **Changes**:
+
 ```kotlin
 data class Earning(
     // ... existing fields ...
@@ -223,6 +251,7 @@ data class Earning(
 ## Compilation Status
 
 ✅ **BUILD SUCCESSFUL in 1m 14s**
+
 - 41 actionable tasks: 4 executed, 37 up-to-date
 - All new models compile without errors
 - Only unchecked cast warnings (expected for Firestore deserialization)
@@ -271,6 +300,7 @@ data class Earning(
 **Goal**: Migrate existing users to company-centric model
 
 **Steps** (Not implemented yet):
+
 1. Create Cloud Function `migrateUsersToCompanies`
 2. For each existing user:
    - Create personal company: `{userName}'s Workspace`
@@ -287,6 +317,7 @@ data class Earning(
 ## Summary
 
 ✅ **STAGE 2 Complete**: All subscription data models implemented
+
 - 5 new files created (Plan, Company, CompanyRole, PlanDefaults, FeatureFlags)
 - 4 existing models updated (User, Group, Task, Earning)
 - Feature flag system ready for runtime checks

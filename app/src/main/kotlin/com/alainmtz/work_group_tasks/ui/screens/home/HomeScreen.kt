@@ -27,6 +27,8 @@ import com.alainmtz.work_group_tasks.ui.screens.tasks.TaskListScreen
 import com.alainmtz.work_group_tasks.ui.viewmodels.ContactsViewModel
 import com.alainmtz.work_group_tasks.ui.viewmodels.GroupViewModel
 import com.alainmtz.work_group_tasks.ui.viewmodels.TaskViewModel
+import com.alainmtz.work_group_tasks.domain.services.CompanyPlanProvider
+import com.alainmtz.work_group_tasks.ui.components.UsageSummaryChip
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -43,6 +45,7 @@ fun HomeScreen(
     onNavigateToProfile: () -> Unit,
     onNavigateToChatDetail: (String) -> Unit,
     onNavigateToNewChat: () -> Unit,
+    onNavigateToPaywall: () -> Unit,
     taskViewModel: TaskViewModel = viewModel(),
     groupViewModel: GroupViewModel = viewModel(),
     contactsViewModel: ContactsViewModel = viewModel(),
@@ -64,6 +67,9 @@ fun HomeScreen(
     val isGroupsLoading by groupViewModel.isLoading.collectAsState()
 
     val totalUnreadCount by chatViewModel.totalUnreadCount.collectAsState()
+    
+    val company = CompanyPlanProvider.currentCompany.collectAsState().value
+    val plan = CompanyPlanProvider.currentPlan.collectAsState().value
 
     val isSyncingContacts by contactsViewModel.isSyncing.collectAsState()
     val context = LocalContext.current
@@ -172,6 +178,14 @@ fun HomeScreen(
                         TextButton(onClick = { showJoinGroupDialog = true }) {
                             Text("Join Group")
                         }
+                    }
+                    // Usage summary chip
+                    if (company != null) {
+                        UsageSummaryChip(
+                            company = company!!,
+                            plan = plan,
+                            onClick = onNavigateToProfile
+                        )
                     }
                     IconButton(onClick = onNavigateToProfile) {
                         Icon(Icons.Default.Person, contentDescription = "Profile")

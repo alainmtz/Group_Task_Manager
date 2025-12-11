@@ -7,6 +7,7 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import coil.request.CachePolicy
 import coil.util.DebugLogger
+import com.alainmtz.work_group_tasks.domain.services.CompanyPlanProvider
 import com.google.firebase.FirebaseApp
 import com.google.firebase.appcheck.FirebaseAppCheck
 import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory
@@ -27,6 +28,9 @@ class CollaborativeTasksApplication : Application(), ImageLoaderFactory {
             .setCacheSizeBytes(FirebaseFirestoreSettings.CACHE_SIZE_UNLIMITED)
             .build()
         firestore.firestoreSettings = settings
+        
+        // Initialize company and plan provider
+        CompanyPlanProvider.initialize()
         
         // Only enable App Check in production
         if (!BuildConfig.DEBUG) {

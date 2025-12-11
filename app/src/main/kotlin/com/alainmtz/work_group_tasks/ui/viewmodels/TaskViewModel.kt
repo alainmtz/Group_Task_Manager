@@ -3,8 +3,10 @@ package com.alainmtz.work_group_tasks.ui.viewmodels
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.alainmtz.work_group_tasks.domain.models.Company
 import com.alainmtz.work_group_tasks.domain.models.NotificationType
 import com.alainmtz.work_group_tasks.domain.models.PendingUpload
+import com.alainmtz.work_group_tasks.domain.models.PlanTier
 import com.alainmtz.work_group_tasks.domain.models.UploadStatus
 import com.alainmtz.work_group_tasks.domain.models.PostponementRequest
 import com.alainmtz.work_group_tasks.domain.models.Subtask
@@ -15,6 +17,8 @@ import com.alainmtz.work_group_tasks.domain.models.Task
 import com.alainmtz.work_group_tasks.domain.models.TaskPriority
 import com.alainmtz.work_group_tasks.domain.models.TaskStatus
 import com.alainmtz.work_group_tasks.domain.services.NotificationService
+import com.alainmtz.work_group_tasks.domain.services.CompanyPlanProvider
+import com.alainmtz.work_group_tasks.domain.services.FeatureFlags
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -935,6 +939,33 @@ class TaskViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                android.util.Log.d("TaskViewModel", "createTask called with title: $title, current tasks: ${_tasks.value.size}")
+                
+                // Check if user can create more tasks
+                val company = CompanyPlanProvider.currentCompany.value
+                val plan = CompanyPlanProvider.currentPlan.value
+                
+                // Create effective company for users without a company
+                val effectiveCompany = company ?: Company(
+                    id = "temp",
+                    planId = "free",
+                    planTier = PlanTier.FREE,
+                    activeTasksCount = _tasks.value.size,
+                    ownerId = userId
+                )
+                
+                android.util.Log.d("TaskViewModel", "Limit check - company: ${if (company != null) "exists" else "null"}, plan: ${plan.tier}, current tasks: ${effectiveCompany.activeTasksCount}")
+                
+                val (canCreate, reason) = FeatureFlags.canCreateTask(effectiveCompany, plan)
+                android.util.Log.d("TaskViewModel", "Limit check result - canCreate: $canCreate, reason: $reason")
+                
+                if (!canCreate) {
+                    android.util.Log.e("TaskViewModel", "TASK LIMIT REACHED: $reason")
+                    _error.value = reason ?: "Task limit reached - upgrade to create more tasks"
+                    _isLoading.value = false
+                    return@launch
+                }
+                
                 val userIds = (assignedUserIds + userId).distinct()
                 val newTask = hashMapOf(
                     "title" to title,
@@ -949,6 +980,14 @@ class TaskViewModel : ViewModel() {
                 )
 
                 val docRef = tasksCollection.add(newTask).await()
+
+                // Update company activeTasksCount if user has a company
+                company?.let { comp ->
+                    db.collection("companies")
+                        .document(comp.id)
+                        .update("activeTasksCount", com.google.firebase.firestore.FieldValue.increment(1))
+                        .await()
+                }
 
                 // Get current user name
                 val currentUserDoc = db.collection("users").document(userId).get().await()

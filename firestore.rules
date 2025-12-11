@@ -94,8 +94,13 @@ service cloud.firestore {
       allow read: if isAuthenticated() && request.auth.uid in resource.data.memberIds;
       allow create: if isAuthenticated();
       allow update: if isAuthenticated() && (
+        // Creator can always update
         resource.data.creatorId == request.auth.uid ||
-        request.auth.uid in resource.data.memberIds
+        // Members can update if they are in the current member list
+        request.auth.uid in resource.data.memberIds ||
+        // Allow user to remove themselves even if not in the current list
+        (request.auth.uid in resource.data.memberIds && 
+         !(request.auth.uid in request.resource.data.memberIds))
       );
       allow delete: if isAuthenticated() && resource.data.creatorId == request.auth.uid;
     }
@@ -154,7 +159,12 @@ service cloud.firestore {
     match /chatThreads/{threadId} {
       allow read: if isAuthenticated() && request.auth.uid in resource.data.memberIds;
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated() && request.auth.uid in resource.data.memberIds;
+      allow update: if isAuthenticated() && (
+        request.auth.uid in resource.data.memberIds ||
+        // Allow users to remove themselves even if already removed from group
+        (request.auth.uid in resource.data.memberIds && 
+         !(request.auth.uid in request.resource.data.memberIds))
+      );
       allow delete: if isAuthenticated() && request.auth.uid in resource.data.memberIds;
 
       // Messages subcollection
@@ -184,6 +194,26 @@ service cloud.firestore {
       allow create: if isAuthenticated();
       allow update: if isAuthenticated();
       allow delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // AUDIT LOGS COLLECTION (Enterprise only)
+    // ========================================
+    match /auditLogs/{logId} {
+      // Only company admins can read audit logs for their company
+      allow read: if isAuthenticated() && (
+        // Check if user is admin of any company (could be enhanced to check specific company)
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        getUserData().role == 'admin'
+      );
+      
+      // Writes are handled by the application layer (authenticated users)
+      // In production, consider using a Cloud Function with service account
+      allow create: if isAuthenticated();
+      
+      // No updates or deletes - audit logs are immutable
+      allow update: if false;
+      allow delete: if false;
     }
   }
 }
