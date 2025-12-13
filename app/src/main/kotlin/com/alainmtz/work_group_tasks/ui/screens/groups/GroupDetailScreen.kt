@@ -31,6 +31,7 @@ import com.alainmtz.work_group_tasks.ui.viewmodels.AuthViewModel
 import com.alainmtz.work_group_tasks.ui.viewmodels.ContactsViewModel
 import com.alainmtz.work_group_tasks.ui.viewmodels.GroupViewModel
 import com.alainmtz.work_group_tasks.ui.viewmodels.TaskViewModel
+import com.alainmtz.work_group_tasks.ui.components.UpgradeSnackbar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,6 +41,7 @@ fun GroupDetailScreen(
     onNavigateToTaskDetail: (String) -> Unit,
     onNavigateToCreateTask: (String) -> Unit, // Pass groupId to create task
     onNavigateToChatDetail: (String) -> Unit,
+    onNavigateToPaywall: () -> Unit = {},
     groupViewModel: GroupViewModel = viewModel(),
     taskViewModel: TaskViewModel = viewModel(),
     authViewModel: AuthViewModel = viewModel(),
@@ -88,9 +90,25 @@ fun GroupDetailScreen(
     
     val contacts by contactsViewModel.contacts.collectAsState()
     val foundUsers by groupViewModel.foundUsers.collectAsState()
+    val error by groupViewModel.error.collectAsState()
     
     var showAddMemberSheet by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
+    var showUpgradePrompt by remember { mutableStateOf(false) }
+    
+    // Show upgrade prompt when member limit error occurs
+    LaunchedEffect(error) {
+        if (error != null && error!!.contains("Member limit reached", ignoreCase = true)) {
+            showUpgradePrompt = true
+        }
+    }
+
+    // Close AddMemberSheet when member limit error occurs
+    LaunchedEffect(error) {
+        if (error != null && error!!.contains("Member limit reached", ignoreCase = true)) {
+            showAddMemberSheet = false
+        }
+    }
 
     if (showAddMemberSheet) {
         AddMemberBottomSheet(
@@ -170,18 +188,19 @@ fun GroupDetailScreen(
             }
         }
     ) { paddingValues ->
-        if (group == null) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .padding(paddingValues)
-                    .fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (group == null) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .padding(paddingValues)
+                        .fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                 // Group Info Header
                 item {
                     Card(
@@ -292,10 +311,33 @@ fun GroupDetailScreen(
                         TaskItem(task = task, onClick = { onNavigateToTaskDetail(task.id) })
                     }
                 }
+                } // Close LazyColumn
+            } // Close else block
+            
+            // Upgrade Snackbar (sibling to if/else, inside outer Box)
+            if (showUpgradePrompt) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp)
+                ) {
+                    UpgradeSnackbar(
+                        message = error ?: "You've reached your member limit. Upgrade to PRO to collaborate with up to 15 members per group.",
+                        onUpgradeClick = {
+                            showUpgradePrompt = false
+                            groupViewModel.clearError()
+                            onNavigateToPaywall()
+                        },
+                        onDismiss = {
+                            showUpgradePrompt = false
+                            groupViewModel.clearError()
+                        }
+                    )
+                }
             }
-        }
-    }
-}
+        } // Close outer Box
+    } // Close Scaffold content lambda
+} // Close function
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

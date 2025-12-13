@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
  * Example ViewModel showing how to use CompanyPlanProvider and FeatureFlags
  * for runtime feature checking and limit enforcement.
  */
-class PlanAwareViewModel : ViewModel() {
+open class PlanAwareViewModel : ViewModel() {
 
     // Expose company and plan from the provider
     val currentCompany: StateFlow<Company?> = CompanyPlanProvider.currentCompany
@@ -41,6 +41,10 @@ class PlanAwareViewModel : ViewModel() {
 
     private val _storageUsagePercent = MutableStateFlow(0)
     val storageUsagePercent: StateFlow<Int> = _storageUsagePercent.asStateFlow()
+
+    // Upgrade prompt for when limits are reached
+    protected val _upgradePrompt = MutableStateFlow<String?>(null)
+    val upgradePrompt: StateFlow<String?> = _upgradePrompt.asStateFlow()
 
     init {
         // Observe company and plan changes, then update feature flags
@@ -95,6 +99,15 @@ class PlanAwareViewModel : ViewModel() {
     }
 
     /**
+     * Check if user can upload a photo (monthly limit)
+     */
+    fun canUploadPhoto(): Pair<Boolean, String?> {
+        val company = currentCompany.value ?: return Pair(false, "No company found")
+        val plan = currentPlan.value
+        return FeatureFlags.canUploadPhoto(company, plan)
+    }
+
+    /**
      * Example: Check if user can use approval hierarchy
      */
     fun canUseApprovalHierarchy(): Pair<Boolean, String?> {
@@ -108,6 +121,13 @@ class PlanAwareViewModel : ViewModel() {
     fun getSupportLevel(): String {
         val plan = currentPlan.value
         return FeatureFlags.getSupportLevel(plan)
+    }
+
+    /**
+     * Clear upgrade prompt after user sees it
+     */
+    fun clearUpgradePrompt() {
+        _upgradePrompt.value = null
     }
 
     /**

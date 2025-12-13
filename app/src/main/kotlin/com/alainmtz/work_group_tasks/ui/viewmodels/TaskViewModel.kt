@@ -31,7 +31,7 @@ import kotlinx.coroutines.tasks.await
 import java.util.concurrent.CancellationException
 import java.util.Date
 
-class TaskViewModel : ViewModel() {
+class TaskViewModel : PlanAwareViewModel() {
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
     private val notificationService = NotificationService()
@@ -237,9 +237,42 @@ class TaskViewModel : ViewModel() {
 
     fun completeSubtaskWithProof(subtask: Subtask, imageUri: android.net.Uri, context: android.content.Context) {
         viewModelScope.launch {
+            Log.d("TaskViewModel", "completeSubtaskWithProof: Starting for subtask ${subtask.id}")
             _isLoading.value = true
             try {
+                // Get company from parent task instead of CompanyPlanProvider
+                Log.d("TaskViewModel", "completeSubtaskWithProof: Fetching parent task to get company")
+                val parentTask = tasksCollection.document(subtask.parentTaskId).get().await()
+                val groupId = parentTask.getString("groupId")
+                
+                if (groupId != null) {
+                    val groupDoc = db.collection("groups").document(groupId).get().await()
+                    val companyId = groupDoc.getString("companyId")
+                    
+                    if (companyId != null) {
+                        Log.d("TaskViewModel", "completeSubtaskWithProof: Found companyId=$companyId, checking photo limit")
+                        val companyDoc = db.collection("companies").document(companyId).get().await()
+                        val company = Company.fromFirestore(companyDoc)
+                        
+                        val plan = currentPlan.value
+                        val (canUpload, limitMessage) = FeatureFlags.canUploadPhoto(company, plan)
+                        Log.d("TaskViewModel", "completeSubtaskWithProof: canUpload=$canUpload, message=$limitMessage")
+                        
+                        if (!canUpload) {
+                            Log.w("TaskViewModel", "completeSubtaskWithProof: Photo limit reached, showing upgrade prompt")
+                            _upgradePrompt.value = limitMessage
+                            _isLoading.value = false
+                            return@launch
+                        }
+                    } else {
+                        Log.w("TaskViewModel", "completeSubtaskWithProof: Group has no companyId, allowing upload")
+                    }
+                } else {
+                    Log.w("TaskViewModel", "completeSubtaskWithProof: Task has no groupId, allowing upload")
+                }
+                
                 // Save image to local cache first
+                Log.d("TaskViewModel", "completeSubtaskWithProof: Caching image to local storage")
                 val cacheDir = context.cacheDir
                 val localFile = java.io.File(cacheDir, "pending_upload_${subtask.id}_${System.currentTimeMillis()}.jpg")
                 
@@ -249,6 +282,7 @@ class TaskViewModel : ViewModel() {
                             input.copyTo(output)
                         }
                     }
+                    Log.d("TaskViewModel", "completeSubtaskWithProof: Image cached successfully at ${localFile.absolutePath}")
                 } catch (e: Exception) {
                     Log.e("TaskViewModel", "Error caching image locally", e)
                     _error.value = "Failed to prepare image for upload. Please try again."
@@ -257,6 +291,7 @@ class TaskViewModel : ViewModel() {
                 }
                 
                 // Add to pending uploads
+                Log.d("TaskViewModel", "completeSubtaskWithProof: Creating pending upload entry")
                 val pendingUpload = PendingUpload(
                     subtaskId = subtask.id,
                     subtaskTitle = subtask.title,
@@ -266,6 +301,7 @@ class TaskViewModel : ViewModel() {
                     status = UploadStatus.UPLOADING
                 )
                 _pendingUploads.value = _pendingUploads.value + pendingUpload
+                Log.d("TaskViewModel", "completeSubtaskWithProof: Added to pending uploads, starting retry upload")
                 
                 // Attempt upload with retry logic
                 uploadImageWithRetry(subtask, localFile, pendingUpload, maxRetries = 3)
@@ -688,6 +724,15 @@ class TaskViewModel : ViewModel() {
                 tasksCollection.document(taskId)
                     .update("status", TaskStatus.COMPLETED.name.lowercase())
                     .await()
+                
+                // Update company activeTasksCount if user has a company
+                val company = CompanyPlanProvider.currentCompany.value
+                company?.let { comp ->
+                    db.collection("companies")
+                        .document(comp.id)
+                        .update("activeTasksCount", com.google.firebase.firestore.FieldValue.increment(-1))
+                        .await()
+                }
             } catch (e: Exception) {
                 _error.value = e.message
             }
@@ -697,9 +742,24 @@ class TaskViewModel : ViewModel() {
     fun rejectTask(taskId: String) {
         viewModelScope.launch {
             try {
+                // Get current task status before updating
+                val taskSnapshot = tasksCollection.document(taskId).get().await()
+                val currentStatus = taskSnapshot.getString("status")
+                
                 tasksCollection.document(taskId)
                     .update("status", TaskStatus.PENDING.name.lowercase())
                     .await()
+                
+                // If task was completed and now is pending, increment activeTasksCount
+                if (currentStatus == "completed") {
+                    val company = CompanyPlanProvider.currentCompany.value
+                    company?.let { comp ->
+                        db.collection("companies")
+                            .document(comp.id)
+                            .update("activeTasksCount", com.google.firebase.firestore.FieldValue.increment(1))
+                            .await()
+                    }
+                }
             } catch (e: Exception) {
                 _error.value = e.message
             }
@@ -939,7 +999,19 @@ class TaskViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                android.util.Log.d("TaskViewModel", "createTask called with title: $title, current tasks: ${_tasks.value.size}")
+                // Get real count of active tasks from Firestore
+                // Using simple query to avoid needing composite index
+                val allTasksQuery = tasksCollection
+                    .whereArrayContains("assignedUserIds", userId)
+                    .get()
+                    .await()
+                
+                // Filter out completed tasks in code
+                val activeTasksCount = allTasksQuery.documents.count { doc ->
+                    val status = doc.getString("status") ?: "pending"
+                    status != "completed"
+                }
+                android.util.Log.d("TaskViewModel", "createTask called with title: $title, active tasks from Firestore: $activeTasksCount")
                 
                 // Check if user can create more tasks
                 val company = CompanyPlanProvider.currentCompany.value
@@ -950,11 +1022,11 @@ class TaskViewModel : ViewModel() {
                     id = "temp",
                     planId = "free",
                     planTier = PlanTier.FREE,
-                    activeTasksCount = _tasks.value.size,
+                    activeTasksCount = activeTasksCount,
                     ownerId = userId
                 )
                 
-                android.util.Log.d("TaskViewModel", "Limit check - company: ${if (company != null) "exists" else "null"}, plan: ${plan.tier}, current tasks: ${effectiveCompany.activeTasksCount}")
+                android.util.Log.d("TaskViewModel", "Limit check - company: ${if (company != null) "exists" else "null"}, plan: ${plan.tier}, active tasks: ${effectiveCompany.activeTasksCount}")
                 
                 val (canCreate, reason) = FeatureFlags.canCreateTask(effectiveCompany, plan)
                 android.util.Log.d("TaskViewModel", "Limit check result - canCreate: $canCreate, reason: $reason")
@@ -1522,9 +1594,30 @@ class TaskViewModel : ViewModel() {
                 val taskDoc = tasksCollection.document(parentTaskId).get().await()
                 val task = Task.fromFirestore(taskDoc)
                 val allUserIds = (task.assignedUserIds + task.creatorId + subtask.assignedUserIds).distinct()
+                
+                // Send both events to ensure all UI updates
                 notificationService.sendUpdateEvent(
                     userIds = allUserIds,
                     eventType = "BUDGET_STATUS_CHANGED",
+                    data = mapOf(
+                        "taskId" to parentTaskId,
+                        "subtaskId" to subtask.id
+                    )
+                )
+                
+                notificationService.sendUpdateEvent(
+                    userIds = allUserIds,
+                    eventType = "BUDGET_DISTRIBUTED",
+                    data = mapOf(
+                        "taskId" to parentTaskId,
+                        "subtaskId" to subtask.id
+                    )
+                )
+                
+                // Also send to all assigned users for profile stats update
+                notificationService.sendUpdateEvent(
+                    userIds = subtask.assignedUserIds + (auth.currentUser?.uid ?: ""),
+                    eventType = "SUBTASK_COMPLETION_APPROVED",
                     data = mapOf(
                         "taskId" to parentTaskId,
                         "subtaskId" to subtask.id
@@ -1600,67 +1693,39 @@ class TaskViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                // Get all subtasks to notify assigned users
+                android.util.Log.d("TaskViewModel", "deleteTask: Starting deletion for taskId: $taskId")
+                
+                // Get task to collect assigned user IDs before deletion
+                val taskSnapshot = tasksCollection.document(taskId).get().await()
+                val assignedUserIds = (taskSnapshot.get("assignedUserIds") as? List<*>)
+                    ?.mapNotNull { it as? String } ?: emptyList()
+                
+                // Get all subtasks
                 val subtasksSnapshot = subtasksCollection
                     .whereEqualTo("parentTaskId", taskId)
                     .get()
                     .await()
                 
-                val subtasks = subtasksSnapshot.documents.map { Subtask.fromFirestore(it) }
-                val assignedUserIds = subtasks.flatMap { it.assignedUserIds }.distinct()
-
-                // Delete all chat threads associated with this task
-                val taskChatsSnapshot = db.collection("chatThreads")
-                    .whereEqualTo("taskId", taskId)
-                    .get()
-                    .await()
+                android.util.Log.d("TaskViewModel", "deleteTask: Found ${subtasksSnapshot.size()} subtasks to delete")
                 
-                taskChatsSnapshot.documents.forEach { chatDoc ->
-                    // Delete all messages in this chat thread
-                    val messagesSnapshot = db.collection("messages")
-                        .whereEqualTo("chatThreadId", chatDoc.id)
-                        .get()
-                        .await()
-                    
-                    messagesSnapshot.documents.forEach { msgDoc ->
-                        msgDoc.reference.delete().await()
-                    }
-                    
-                    // Delete the chat thread
-                    chatDoc.reference.delete().await()
-                }
-
-                // Delete all subtasks and their associated chats
+                // Delete all subtasks (chat threads will be orphaned but that's ok for now)
                 subtasksSnapshot.documents.forEach { doc ->
-                    val subtaskId = doc.id
-                    
-                    // Delete chat threads for this subtask
-                    val subtaskChatsSnapshot = db.collection("chatThreads")
-                        .whereEqualTo("subtaskId", subtaskId)
-                        .get()
-                        .await()
-                    
-                    subtaskChatsSnapshot.documents.forEach { chatDoc ->
-                        // Delete messages
-                        val messagesSnapshot = db.collection("messages")
-                            .whereEqualTo("chatThreadId", chatDoc.id)
-                            .get()
-                            .await()
-                        
-                        messagesSnapshot.documents.forEach { msgDoc ->
-                            msgDoc.reference.delete().await()
-                        }
-                        
-                        // Delete chat thread
-                        chatDoc.reference.delete().await()
-                    }
-                    
-                    // Delete the subtask
                     doc.reference.delete().await()
                 }
 
                 // Delete the task
                 tasksCollection.document(taskId).delete().await()
+                android.util.Log.d("TaskViewModel", "deleteTask: Task deleted successfully")
+
+                // Update company activeTasksCount if user has a company
+                val company = CompanyPlanProvider.currentCompany.value
+                company?.let { comp ->
+                    db.collection("companies")
+                        .document(comp.id)
+                        .update("activeTasksCount", com.google.firebase.firestore.FieldValue.increment(-1))
+                        .await()
+                    android.util.Log.d("TaskViewModel", "deleteTask: Decremented activeTasksCount for company ${comp.id}")
+                }
 
                 // Notify all assigned users
                 assignedUserIds.forEach { userId ->

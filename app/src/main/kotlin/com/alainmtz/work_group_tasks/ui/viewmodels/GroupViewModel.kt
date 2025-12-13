@@ -46,6 +46,10 @@ class GroupViewModel : ViewModel() {
         fetchUserGroups()
     }
     
+    fun clearError() {
+        _error.value = null
+    }
+    
     suspend fun getUsersByIds(userIds: List<String>): List<User> {
         if (userIds.isEmpty()) {
             return emptyList()
@@ -371,22 +375,31 @@ class GroupViewModel : ViewModel() {
     }
 
     fun addMember(groupId: String, userId: String, onSuccess: () -> Unit) {
+        val currentUserId = auth.currentUser?.uid ?: return
+        android.util.Log.d("GroupViewModel", "addMember called for groupId: $groupId, userId: $userId")
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                // Check if user can add more members
+                // Get current member count from group
+                val groupDoc = groupsCollection.document(groupId).get().await()
+                val currentMemberCount = (groupDoc.get("memberIds") as? List<*>)?.size ?: 0
+                android.util.Log.d("GroupViewModel", "Current member count in group: $currentMemberCount")
+                
+                // Check if user can add more members (enforce limit for all users)
                 val company = CompanyPlanProvider.currentCompany.value
                 val plan = CompanyPlanProvider.currentPlan.value
-                if (company != null) {
-                    val groupDoc = groupsCollection.document(groupId).get().await()
-                    val currentMemberCount = (groupDoc.get("memberIds") as? List<*>)?.size ?: 0
-                    val (canAdd, reason) = FeatureFlags.canAddMember(currentMemberCount, plan)
-                    if (!canAdd) {
-                        _error.value = reason ?: "Cannot add member: plan limit reached"
-                        _isLoading.value = false
-                        return@launch
-                    }
+                android.util.Log.d("GroupViewModel", "Limit check - company: ${company?.id}, plan: ${plan.tier}, current members: $currentMemberCount")
+                
+                val (canAdd, reason) = FeatureFlags.canAddMember(currentMemberCount, plan)
+                android.util.Log.d("GroupViewModel", "Limit check result - canAdd: $canAdd, reason: $reason")
+                
+                if (!canAdd) {
+                    android.util.Log.e("GroupViewModel", "MEMBER LIMIT REACHED: $reason")
+                    _error.value = reason ?: "Member limit reached - upgrade to add more members"
+                    _isLoading.value = false
+                    return@launch
                 }
+                android.util.Log.d("GroupViewModel", "Limit check passed, adding member...")
                 
                 groupsCollection.document(groupId)
                     .update("memberIds", com.google.firebase.firestore.FieldValue.arrayUnion(userId))
@@ -394,8 +407,7 @@ class GroupViewModel : ViewModel() {
                 
                 updateChatThreadMembers(groupId, userId, true)
 
-                // Notify the user
-                val groupDoc = groupsCollection.document(groupId).get().await()
+                // Notify the user (reuse groupDoc from earlier)
                 val groupName = groupDoc.getString("name") ?: "a group"
                 
                 notificationService.createNotification(

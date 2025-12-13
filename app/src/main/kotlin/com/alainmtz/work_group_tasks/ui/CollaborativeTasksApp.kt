@@ -183,7 +183,8 @@ fun CollaborativeTasksApp(
                     if (taskId != null) {
                         TaskDetailScreen(
                             taskId = taskId,
-                            onNavigateBack = { navController.popBackStack() }
+                            onNavigateBack = { navController.popBackStack() },
+                            onNavigateToPaywall = { navController.navigate("paywall") }
                         )
                     }
                 }
@@ -201,7 +202,8 @@ fun CollaborativeTasksApp(
                             onNavigateBack = { navController.popBackStack() },
                             onNavigateToTaskDetail = { taskId -> navController.navigate("task_detail/$taskId") },
                             onNavigateToCreateTask = { gId -> navController.navigate("create_task?groupId=$gId") },
-                            onNavigateToChatDetail = { threadId -> navController.navigate("chat_detail/$threadId") }
+                            onNavigateToChatDetail = { threadId -> navController.navigate("chat_detail/$threadId") },
+                            onNavigateToPaywall = { navController.navigate("paywall") }
                         )
                     }
                 }

@@ -229,7 +229,7 @@ fun CreateTaskScreen(
                     .padding(16.dp)
             ) {
                 UpgradeSnackbar(
-                    message = error ?: "Task limit reached - upgrade to create more tasks",
+                    message = error ?: "You've reached your task limit. Upgrade to PRO to manage up to 50 active tasks and boost your productivity.",
                     onUpgradeClick = { 
                         showUpgradePrompt = false
                         onNavigateToPaywall()

@@ -36,6 +36,7 @@ import com.alainmtz.work_group_tasks.domain.services.UpdateEventBus
 import kotlinx.coroutines.flow.collectLatest
 import com.alainmtz.work_group_tasks.ui.components.UserAssignment
 import com.alainmtz.work_group_tasks.ui.components.Avatar
+import com.alainmtz.work_group_tasks.ui.components.UpgradeSnackbar
 import com.alainmtz.work_group_tasks.ui.viewmodels.ChatViewModel
 import com.alainmtz.work_group_tasks.ui.viewmodels.GroupViewModel
 import com.alainmtz.work_group_tasks.ui.viewmodels.TaskViewModel
@@ -53,6 +54,7 @@ import androidx.compose.ui.platform.LocalContext
 fun TaskDetailScreen(
     taskId: String,
     onNavigateBack: () -> Unit,
+    onNavigateToPaywall: () -> Unit = {},
     viewModel: TaskViewModel = viewModel(),
     groupViewModel: GroupViewModel = viewModel(),
     chatViewModel: ChatViewModel = viewModel(),
@@ -64,6 +66,7 @@ fun TaskDetailScreen(
     val success by viewModel.success.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val pendingUploads by viewModel.pendingUploads.collectAsState()
+    val upgradePrompt by viewModel.upgradePrompt.collectAsState()
     val currentUserId = viewModel.currentUserId
     
     val groups by groupViewModel.groups.collectAsState()
@@ -126,6 +129,16 @@ fun TaskDetailScreen(
         }
     }
     
+    // Show upgrade prompt when photo limit reached
+    UpgradeSnackbar(
+        message = upgradePrompt ?: "",
+        onDismiss = { viewModel.clearUpgradePrompt() },
+        onUpgradeClick = {
+            viewModel.clearUpgradePrompt()
+            onNavigateToPaywall()
+        }
+    )
+    
     if (showAddSubtaskDialog && task != null) {
         AddSubtaskDialog(
             onDismiss = { showAddSubtaskDialog = false },
@@ -154,6 +167,8 @@ fun TaskDetailScreen(
                     onClick = {
                         viewModel.deleteTask(task.id)
                         showDeleteTaskDialog = false
+                        // Navigate back immediately to avoid listener issues
+                        onNavigateBack()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
@@ -484,6 +499,7 @@ fun SubtaskItem(
     var showPhotoSourceDialog by remember { mutableStateOf(false) }
     var showPostponementDialog by remember { mutableStateOf(false) }
     var showFullScreenImage by remember { mutableStateOf(false) }
+    var isPendingPhotoUpload by remember { mutableStateOf(false) }
     
     var subtaskAssignedUsers by remember { mutableStateOf<List<User>>(emptyList()) }
     var cameraPhotoUri by remember { mutableStateOf<Uri?>(null) }
@@ -494,6 +510,10 @@ fun SubtaskItem(
         onResult = { uri ->
             if (uri != null) {
                 onCompleteWithProof(uri)
+                isPendingPhotoUpload = false
+            } else {
+                // User cancelled - reset checkbox
+                isPendingPhotoUpload = false
             }
         }
     )
@@ -503,6 +523,10 @@ fun SubtaskItem(
         onResult = { success ->
             if (success && cameraPhotoUri != null) {
                 onCompleteWithProof(cameraPhotoUri!!)
+                isPendingPhotoUpload = false
+            } else {
+                // User cancelled - reset checkbox
+                isPendingPhotoUpload = false
             }
         }
     )
@@ -515,6 +539,9 @@ fun SubtaskItem(
                     cameraPhotoUri = uri
                     cameraLauncher.launch(uri)
                 }
+            } else {
+                // User denied camera permission - reset checkbox
+                isPendingPhotoUpload = false
             }
         }
     )
@@ -568,7 +595,10 @@ fun SubtaskItem(
     
     if (showPhotoSourceDialog) {
         AlertDialog(
-            onDismissRequest = { showPhotoSourceDialog = false },
+            onDismissRequest = { 
+                showPhotoSourceDialog = false
+                isPendingPhotoUpload = false // User cancelled dialog
+            },
             title = { Text("Select Photo Source") },
             text = { Text("Choose where to get the photo from") },
             confirmButton = {
@@ -650,9 +680,10 @@ fun SubtaskItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Checkbox(
-                    checked = subtask.status == SubtaskStatus.COMPLETED,
+                    checked = subtask.status == SubtaskStatus.COMPLETED || isPendingPhotoUpload,
                     onCheckedChange = { isChecked ->
                         if (isChecked) {
+                            isPendingPhotoUpload = true
                             showPhotoSourceDialog = true
                         } else {
                             onToggleStatus()

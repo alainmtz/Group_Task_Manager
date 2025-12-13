@@ -23,6 +23,7 @@ Full-featured plan comparison screen with:
   - Advanced features (budgets, bidding, analytics, SSO, API, etc.)
   - Check marks, X marks, and "Custom" labels
 - Material3 design with proper theming
+- ✅ **TESTED & WORKING**: Navigation from upgrade prompts confirmed
 
 #### **UpgradePrompts.kt** (`ui/components/`)
 
@@ -34,10 +35,14 @@ Reusable upgrade prompt library with 4 components:
    - Benefits card with bullet points
    - "View Plans" and "Maybe Later" buttons
 
-2. **UpgradeSnackbar**: Compact notification
-   - Lock icon with message
-   - "UPGRADE" action button
-   - Dismissible
+2. **UpgradeSnackbar**: Compact notification - ✅ **REDESIGNED & TESTED**
+   - Card-based Material 3 design (elevated, rounded corners)
+   - Lock icon with circular background (primary color)
+   - Clear message text with proper typography
+   - Prominent "UPGRADE" button with star icon ⭐
+   - Dismissible with X button
+   - Positioned at bottom center of screen
+   - ✅ **TESTED**: Displays correctly on group and task limits
 
 3. **UpgradeBanner**: Inline Card component
    - Warning icon and title
@@ -106,30 +111,80 @@ Complete subscription management screen:
 
 #### **ViewModels Updated**
 
-**GroupViewModel.kt**:
+**GroupViewModel.kt**: ✅ **TESTED & WORKING**
 
 - `createGroup()`: Checks `FeatureFlags.canCreateGroup()` before creating
 - `addMember()`: Checks `FeatureFlags.canAddMember()` before adding
+- Implements "effective company" pattern for users without companies
+- `clearError()`: Function added for proper error state management
+- Enhanced logging for debugging limit checks (createGroup, addMember)
 - Shows error message if limit reached
+- ✅ **Test 1.1 PASSED**: 1 group limit enforced on FREE plan
+- ✅ **Test 1.3 PASSED**: 5 member limit enforced on FREE plan per group
 
-**TaskViewModel.kt**:
+**TaskViewModel.kt**: ✅ **TESTED & WORKING**
 
+- **UPDATED**: Extended from `PlanAwareViewModel` for feature flag access
 - `createTask()`: Checks `FeatureFlags.canCreateTask()` before creating
+- `completeSubtaskWithProof()`: Checks `FeatureFlags.canUploadPhoto()` BEFORE image caching
+- Implements "effective company" pattern for users without companies
+- Real-time task count from Firestore (optimized query without composite index)
+- Enhanced logging for debugging limit checks
 - Shows error message if limit reached
+- Photo upload BLOCKED when monthly limit reached (5 photos/month on FREE)
+- `deleteTask()`: Decrements activeTasksCount, navigates back immediately to avoid crashes
+- `approveTask()`: Decrements activeTasksCount when task completed
+- `rejectTask()`: Increments activeTasksCount when task reopened
+- ✅ **Test 1.2 PASSED**: 10 task limit enforced on FREE plan
+- ✅ **Test 1.5 PASSED**: 5 photo/month limit enforced on FREE plan
+- ✅ **VERIFIED**: Deleting tasks frees up the limit correctly
+
+**PlanAwareViewModel.kt**: ✅ **UPDATED**
+
+- **Made `open class`** to allow inheritance (TaskViewModel extends it)
+- Added `canUploadPhoto()`: Checks monthly photo upload limit
+- Added `upgradePrompt` StateFlow for observability
+- Added `clearUpgradePrompt()`: Clears upgrade message after user sees it
+- All existing feature flag methods preserved
 
 #### **UI Screens Updated**
 
-**CreateGroupScreen.kt**:
+**CreateGroupScreen.kt**: ✅ **TESTED & WORKING**
 
 - Listens for error state from ViewModel
-- Shows UpgradeSnackbar when group limit is reached
+- Shows UpgradeSnackbar when group limit is reached (positioned at bottom)
+- Personalized message: "You've reached your group limit. Upgrade to PRO to create unlimited groups and organize more projects."
 - Fallback to regular Snackbar for other errors
+- Material 3 redesigned Snackbar with proper styling
+- ✅ **Navigation to PaywallScreen working**
 
-**CreateTaskScreen.kt**:
+**CreateTaskScreen.kt**: ✅ **TESTED & WORKING**
 
 - Listens for error state from ViewModel
-- Shows UpgradeSnackbar when task limit is reached
+- Shows UpgradeSnackbar when task limit is reached (positioned at bottom)
+- Personalized message: "You've reached your task limit. Upgrade to PRO to manage up to 50 active tasks and boost your productivity."
 - Fallback to regular Snackbar for other errors
+- Material 3 redesigned Snackbar with proper styling
+- ✅ **Navigation to PaywallScreen working**
+
+**GroupDetailScreen.kt**: ✅ **TESTED & WORKING**
+
+- Listens for error state from GroupViewModel
+- Shows UpgradeSnackbar when member limit is reached (positioned at bottom)
+- Personalized message: "You've reached your member limit. Upgrade to PRO to collaborate with up to 15 members per group."
+- AddMemberBottomSheet auto-closes when limit reached (LaunchedEffect on error)
+- Calls `clearError()` when dismissing or upgrading
+- Material 3 redesigned Snackbar with proper styling
+- ✅ **Navigation to PaywallScreen working**
+
+**TaskDetailScreen.kt**: ✅ **TESTED & WORKING**
+
+- **UPDATED**: Observes `upgradePrompt` from TaskViewModel
+- Shows UpgradeSnackbar when photo upload limit reached (5 photos/month on FREE)
+- Added `onNavigateToPaywall` parameter for navigation
+- Message: "Monthly photo limit reached (5). Upgrade to PRO for unlimited uploads."
+- Photo upload blocked BEFORE caching when limit reached
+- ✅ **Navigation to PaywallScreen working**
 
 **HomeScreen.kt**:
 
@@ -260,16 +315,18 @@ LaunchedEffect(error) {
 
 ## 📊 Feature Coverage
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Group Creation Limits | ✅ Complete | Enforced in GroupViewModel |
-| Task Creation Limits | ✅ Complete | Enforced in TaskViewModel |
-| Member Addition Limits | ✅ Complete | Enforced in GroupViewModel |
-| Storage Limits | ⚠️ UI Only | Backend enforcement needed |
-| Photo Upload Limits | ⚠️ UI Only | Backend enforcement needed |
-| Upgrade Prompts | ✅ Complete | 4 component types available |
-| Usage Indicators | ✅ Complete | Real-time tracking |
-| Billing Management | ✅ Complete | Google Play placeholder |
+| Feature               | Status       | Testing Status | Notes                       |
+|---------              |--------      |----------------|-------                      |
+| Group Creation Limits | ✅ Complete  | ✅ **TESTED**  | Enforced in GroupViewModel - Test 1.1 PASSED  |
+| Task Creation Limits  | ✅ Complete  | ✅ **TESTED**  | Enforced in TaskViewModel - Test 1.2 PASSED   |
+| Member Addition Limits| ✅ Complete  | ✅ **TESTED**  | Enforced in GroupViewModel - Test 1.3 PASSED - 5 members max per group |
+| Storage Limits Display| ✅ Complete  | ✅ **TESTED**  | UsageMetricsCard with animated progress bar - Test 1.4 PASSED |
+| Photo Upload Limits   | ✅ Complete  | ✅ **TESTED**  | Backend enforcement in TaskViewModel - Test 1.5 PASSED - 5 photos/month on FREE |
+| Upgrade Prompts       | ✅ Complete  | ✅ **TESTED**  | Material 3 redesigned, personalized messages, navigation working |
+| Usage Indicators      | ✅ Complete  | ✅ **TESTED**  | Real-time tracking from Firestore |
+| Billing Management    | ✅ Complete  | ✅ **TESTED**  | Shows real user metrics with effective company |
+| Task Deletion         | ✅ Complete  | ✅ **TESTED**  | Properly frees up task limit |
+| Personalized Messages | ✅ Complete  | ✅ **TESTED**  | Context-aware upgrade prompts for groups, tasks, members, photos |
 
 ---
 

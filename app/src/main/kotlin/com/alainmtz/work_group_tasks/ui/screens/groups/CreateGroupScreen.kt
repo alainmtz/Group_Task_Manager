@@ -99,8 +99,8 @@ fun CreateGroupScreen(
                         .padding(16.dp)
                 ) {
                     UpgradeSnackbar(
-                        message = error ?: "Group limit reached - upgrade to create more groups",
-                        onUpgradeClick = { 
+                        message = error ?: "You've reached your group limit. Upgrade to PRO to create unlimited groups and organize more projects.",
+                        onUpgradeClick = {
                             showUpgradePrompt = false
                             onNavigateToPaywall()
                         },
